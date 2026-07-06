@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment
+.env
+backend/.env
+
+# Database
+*.db
+backend/*.db
+
+# Logs
+*.log
+backend/*.log
+uvicorn.log
+
+# Node
+node_modules/
+
+# Build
+dist/
+build/
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
