@@ -14,11 +14,10 @@ from dataclasses import dataclass, field
 from typing import Optional, Set
 from urllib.parse import urljoin, urlparse
 from collections import deque
-
 import httpx
+from curl_cffi import requests as curl_requests
+from curl_cffi.requests.errors import RequestsError
 from bs4 import BeautifulSoup
-
-from app.modules.crawl_validator import CrawlValidator
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +48,9 @@ class CrawlResult:
     llms_txt: Optional[str]
     sitemap_urls: list[str]
     total_pages: int
+    pages_skipped: int = 0
+    pages_timed_out: int = 0
+    pages_blocked: int = 0
     is_blocked: bool = False
     block_reason: Optional[str] = None
     block_type: Optional[str] = None
@@ -82,8 +84,24 @@ class PerformanceOptimizedCrawler:
     def __init__(self, max_pages: int = 50, timeout: int = 30):
         self.max_pages = max_pages
         self.timeout = timeout
-        self.validator = CrawlValidator()
         self.http_client = None
+        self.stats_skipped = 0
+        self.stats_timed_out = 0
+        self.stats_blocked = 0
+
+    def _is_cloudflare_blocked(self, html: str, status_code: int) -> bool:
+        """Detect if the page is blocked by Cloudflare or similar bot protection."""
+        if status_code in [403, 429]:
+            return True
+        if not html:
+            return False
+        soup = BeautifulSoup(html, "lxml")
+        title = soup.title.string.strip() if soup.title and soup.title.string else ""
+        if "Just a moment..." in title or "Cloudflare" in title or "Attention Required!" in title:
+            return True
+        if soup.find(id="cf-wrapper") or soup.find(class_="cf-browser-verification"):
+            return True
+        return False
 
     async def crawl(self, start_url: str) -> CrawlResult:
         """Main crawl entry point."""
@@ -96,18 +114,26 @@ class PerformanceOptimizedCrawler:
             
             base = self._base_url(start_url)
             
-            # Create persistent HTTP client
-            self.http_client = httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=10, read=30, write=10, pool=5),
-                follow_redirects=True,
-                verify=False,
-                limits=httpx.Limits(max_connections=20, max_keepalive_connections=10)
+            # Create persistent HTTP client (impersonating Chrome to bypass Cloudflare)
+            self.http_client = curl_requests.AsyncSession(
+                impersonate="chrome120",
+                timeout=30,
+                allow_redirects=True,
+                verify=False
             )
             
             # STEP 1: Fetch homepage
             logger.info("\n[STEP 1] Fetching Homepage...")
-            homepage_html, status_code, used_playwright = await self._fetch_page_httpx_first(start_url)
+            homepage_html, status_code, used_playwright, fallback_reason = await self._fetch_page_httpx_first(start_url)
             
+            if self._is_cloudflare_blocked(homepage_html, status_code):
+                logger.warning(f"✗ BLOCKED by bot protection (Status: {status_code})")
+                return CrawlResult(
+                    pages={}, robots_txt=None, llms_txt=None, sitemap_urls=[], total_pages=0,
+                    is_blocked=True, block_reason="Cloudflare or Bot Protection Blocked",
+                    block_type="Bot Protection", block_details="The site is actively blocking automated access."
+                )
+
             if not homepage_html:
                 logger.error("✗ Failed to load homepage")
                 return CrawlResult(
@@ -126,27 +152,8 @@ class PerformanceOptimizedCrawler:
             logger.info(f"  HTTP Status: {status_code}")
             logger.info(f"  HTML Size: {len(homepage_html)} bytes")
             logger.info(f"  Playwright Used: {used_playwright}")
-            
-            # STEP 2: Validate
-            logger.info("\n[STEP 2] Validating Homepage...")
-            validation = self.validator.validate(status_code, homepage_html, start_url)
-            
-            if not validation.is_valid:
-                logger.warning(f"✗ BLOCKED: {validation.block_type}")
-                logger.warning(f"  Reason: {validation.reason}")
-                return CrawlResult(
-                    pages={},
-                    robots_txt=None,
-                    llms_txt=None,
-                    sitemap_urls=[],
-                    total_pages=0,
-                    is_blocked=True,
-                    block_reason=validation.reason,
-                    block_type=validation.block_type,
-                    block_details=validation.details,
-                )
-            
-            logger.info("✓ Validation Passed")
+            if fallback_reason:
+                logger.info(f"  Fallback Reason: {fallback_reason}")
             
             # STEP 3: Concurrent metadata fetching
             logger.info("\n[STEP 3] Fetching Metadata (robots.txt, sitemap)...")
@@ -187,6 +194,9 @@ class PerformanceOptimizedCrawler:
             logger.info(f"\n{'='*70}")
             logger.info(f"Analysis Complete")
             logger.info(f"Pages Crawled: {len(pages)}")
+            logger.info(f"Pages Skipped: {self.stats_skipped}")
+            logger.info(f"Pages Timed Out: {self.stats_timed_out}")
+            logger.info(f"Pages Blocked: {self.stats_blocked}")
             logger.info(f"{'='*70}\n")
             
             return CrawlResult(
@@ -195,6 +205,9 @@ class PerformanceOptimizedCrawler:
                 llms_txt=llms_txt,
                 sitemap_urls=sitemap_urls,
                 total_pages=len(pages),
+                pages_skipped=self.stats_skipped,
+                pages_timed_out=self.stats_timed_out,
+                pages_blocked=self.stats_blocked,
                 is_blocked=False,
             )
         
@@ -216,44 +229,49 @@ class PerformanceOptimizedCrawler:
         finally:
             # Cleanup
             if self.http_client:
-                await self.http_client.aclose()
+                self.http_client.close()
 
-    async def _fetch_page_httpx_first(self, url: str) -> tuple[str, int, bool]:
+    async def _fetch_page_httpx_first(self, url: str) -> tuple[str, int, bool, str]:
         """HTTPX fetch first; if content looks JS-rendered (no title/h1), try Playwright."""
-        logger.info(f"  Sending HTTP request to {url}")
+        logger.info(f"  [HTTPX Started] {url}")
 
         html, status_code = "", 0
-        for attempt in range(2):
+        for attempt in range(3):
             html, status_code = await self._fetch_with_httpx(url)
             if html and len(html) > 200:
+                logger.info(f"  [HTTPX Success] {url} - {len(html)} bytes (Attempt {attempt+1})")
                 break
-            if attempt == 0:
-                logger.info(f"  Retrying {url}...")
-                await asyncio.sleep(2)
+            if attempt < 2:
+                sleep_time = 2 ** attempt
+                logger.debug(f"  [HTTPX Retry] Retrying {url} in {sleep_time}s...")
+                await asyncio.sleep(sleep_time)
 
-        if html and len(html) > 200:
-            # Check if page is JS-rendered (no title and no h1 in raw HTML)
-            soup_check = BeautifulSoup(html, "lxml")
-            has_title = bool(soup_check.title and soup_check.title.string and soup_check.title.string.strip())
-            has_h1 = bool(soup_check.find("h1"))
-            has_og_title = bool(soup_check.find("meta", property="og:title"))
-            if has_title or has_h1 or has_og_title:
-                logger.info(f"  HTTPX OK — {len(html)} bytes")
-                return html, status_code, False
-            # JS-rendered: try Playwright
-            logger.info(f"  HTTPX got {len(html)} bytes but no title/h1 — trying Playwright")
-            pw_html, pw_status = await self._fetch_with_playwright(url)
-            if pw_html and len(pw_html) > len(html):
-                logger.info(f"  Playwright OK — {len(pw_html)} bytes")
-                return pw_html, pw_status, True
-            logger.info(f"  Playwright unavailable — using HTTPX result")
-            return html, status_code, False
+        if not html or len(html) <= 200:
+            logger.warning(f"  [HTTPX Failed] {url} after 3 attempts.")
+            return "", status_code, False, "HTTPX Failed"
 
-        logger.warning(f"  HTTPX failed after 2 attempts ({len(html)} bytes)")
-        return "", 0, False
+        # Check if page is JS-rendered
+        soup_check = BeautifulSoup(html, "lxml")
+        has_title = bool(soup_check.title and soup_check.title.string and soup_check.title.string.strip())
+        has_h1 = bool(soup_check.find("h1"))
+        has_og_title = bool(soup_check.find("meta", property="og:title"))
+        
+        if has_title or has_h1 or has_og_title:
+            return html, status_code, False, ""
+            
+        # JS-rendered: try Playwright
+        logger.info(f"  [Playwright Started] HTTPX got {len(html)} bytes but insufficient content for {url}")
+        pw_html, pw_status = await self._fetch_with_playwright(url)
+        
+        if pw_html and len(pw_html) > len(html):
+            logger.info(f"  [Playwright Success] {url} - {len(pw_html)} bytes")
+            return pw_html, pw_status, True, ""
+            
+        logger.info(f"  [Fallback Reason] Playwright insufficient or failed, falling back to HTTPX result for {url}")
+        return html, status_code, False, "Playwright Failed/Timeout"
 
     async def _fetch_with_httpx(self, url: str) -> tuple[str, int]:
-        """Fetch with HTTPX using persistent client."""
+        """Fetch with HTTPX (now using curl_cffi for bot bypass) using persistent client."""
         if not self.http_client:
             return "", 0
         
@@ -280,7 +298,7 @@ class PerformanceOptimizedCrawler:
             else:
                 return "", resp.status_code
         
-        except (asyncio.TimeoutError, httpx.TimeoutException):
+        except (asyncio.TimeoutError, httpx.TimeoutException, RequestsError):
             logger.debug(f"    Timeout fetching {url}")
             return "", 0
         except Exception as e:
@@ -296,9 +314,9 @@ class PerformanceOptimizedCrawler:
             return "", 0
 
     def _fetch_playwright_sync(self, url: str) -> tuple[str, int]:
-        import time
         import asyncio
         from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+        from playwright_stealth import stealth_sync
         
         # Ensure the thread has an event loop for Playwright's internals
         try:
@@ -308,23 +326,33 @@ class PerformanceOptimizedCrawler:
             
         try:
             with sync_playwright() as p:
+                logger.debug(f"  [Browser Launched] Chromium headless for {url}")
                 browser = p.chromium.launch(headless=True)
                 context = browser.new_context(user_agent=random.choice(USER_AGENTS))
                 page = context.new_page()
+                stealth_sync(page)
                 try:
-                    resp = page.goto(url, wait_until="domcontentloaded", timeout=30000)
-                    time.sleep(2)  # let JS render
+                    # Use domcontentloaded for reliability without arbitrary sleeps
+                    resp = page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                    
+                    try:
+                        # Wait for body to ensure basic layout is present
+                        page.wait_for_selector("body", timeout=5000)
+                    except PlaywrightTimeoutError:
+                        pass
+                        
                     html = page.content()
                     status = resp.status if resp else 200
+                    logger.debug(f"  [Extraction Completed] Playwright got {len(html)} bytes for {url}")
                     return html, status
                 except PlaywrightTimeoutError:
-                    logger.warning(f"  Playwright timeout for {url}")
+                    logger.warning(f"  [Timeout Reason] Playwright navigation timeout for {url}")
                     return "", 0
                 finally:
                     context.close()
                     browser.close()
         except Exception as e:
-            logger.warning(f"  Playwright error: {type(e).__name__}: {e}")
+            logger.warning(f"  [Playwright Error] {type(e).__name__}: {e}")
             return "", 0
 
     async def _crawl_pages_concurrent(self, seeds: list[str], base: str) -> dict[str, RawPage]:
@@ -332,34 +360,57 @@ class PerformanceOptimizedCrawler:
         visited: dict[str, RawPage] = {}
         semaphore = asyncio.Semaphore(5)  # Max 5 concurrent requests
         
+        self.stats_skipped = 0
+        self.stats_timed_out = 0
+        self.stats_blocked = 0
+        
         async def fetch_and_parse(url: str) -> Optional[RawPage]:
             async with semaphore:
-                html, status_code, _ = await self._fetch_page_httpx_first(url)
-                
-                if not html:
+                try:
+                    # Apply a per-page strict timeout across the entire pipeline
+                    html, status_code, _, fallback = await asyncio.wait_for(
+                        self._fetch_page_httpx_first(url),
+                        timeout=45.0
+                    )
+                    
+                    if self._is_cloudflare_blocked(html, status_code):
+                        logger.warning(f"  [Blocked] {url} blocked by Cloudflare/Bot Protection")
+                        self.stats_blocked += 1
+                        return None
+                    
+                    if not html:
+                        self.stats_timed_out += 1
+                        return None
+                    
+                    soup = BeautifulSoup(html, "lxml")
+                    page = RawPage(
+                        url=url,
+                        html=html,
+                        status_code=status_code,
+                        headers={},
+                        metadata=self._extract_metadata(soup),
+                        internal_links=self._extract_links(soup, url, base, internal=True),
+                        external_links=self._extract_links(soup, url, base, internal=False),
+                        images=[],
+                        scripts=[s.get("src", "") for s in soup.find_all("script", src=True)],
+                        stylesheets=[l.get("href", "") for l in soup.find_all("link", rel="stylesheet")],
+                        json_ld=self._extract_json_ld(soup),
+                        canonical=self._get_attr(soup, "link[rel='canonical']", "href"),
+                        robots_meta=self._get_attr(soup, "meta[name='robots']", "content"),
+                        og_tags={t.get("property", "").replace("og:", ""): t.get("content", "")
+                                 for t in soup.find_all("meta", property=re.compile(r"^og:"))},
+                        twitter_tags={t.get("name", "").replace("twitter:", ""): t.get("content", "")
+                                      for t in soup.find_all("meta", attrs={"name": re.compile(r"^twitter:")})},
+                    )
+                    return page
+                except asyncio.TimeoutError:
+                    logger.warning(f"  [Timeout Reason] Global per-page timeout for {url}")
+                    self.stats_timed_out += 1
                     return None
-                
-                soup = BeautifulSoup(html, "lxml")
-                page = RawPage(
-                    url=url,
-                    html=html,
-                    status_code=status_code,
-                    headers={},
-                    metadata=self._extract_metadata(soup),
-                    internal_links=self._extract_links(soup, url, base, internal=True),
-                    external_links=self._extract_links(soup, url, base, internal=False),
-                    images=[],
-                    scripts=[s.get("src", "") for s in soup.find_all("script", src=True)],
-                    stylesheets=[l.get("href", "") for l in soup.find_all("link", rel="stylesheet")],
-                    json_ld=self._extract_json_ld(soup),
-                    canonical=self._get_attr(soup, "link[rel='canonical']", "href"),
-                    robots_meta=self._get_attr(soup, "meta[name='robots']", "content"),
-                    og_tags={t.get("property", "").replace("og:", ""): t.get("content", "")
-                             for t in soup.find_all("meta", property=re.compile(r"^og:"))},
-                    twitter_tags={t.get("name", "").replace("twitter:", ""): t.get("content", "")
-                                  for t in soup.find_all("meta", attrs={"name": re.compile(r"^twitter:")})},
-                )
-                return page
+                except Exception as e:
+                    logger.warning(f"  [Error] Failed to process {url}: {e}")
+                    self.stats_skipped += 1
+                    return None
         
         # Fetch all pages concurrently
         tasks = [fetch_and_parse(url) for url in seeds]

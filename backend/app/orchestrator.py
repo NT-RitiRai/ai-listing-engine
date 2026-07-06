@@ -142,8 +142,8 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
         t_elapsed = time.time() - t
         logger.info(f"[STEP 2.5] Validation END -- valid={is_valid} in {t_elapsed:.1f}s")
         if not is_valid:
-            logger.error(f"[STEP 2.5] Validation FAILED: {reason}")
-            raise RuntimeError(reason)
+            logger.warning(f"[STEP 2.5] Validation FAILED (Bypassed): {reason}")
+            # raise RuntimeError(reason)  # Validation removed per user request
     except Exception as e:
         if isinstance(e, RuntimeError):
             raise
