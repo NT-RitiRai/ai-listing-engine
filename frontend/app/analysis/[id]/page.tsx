@@ -1,7 +1,8 @@
 "use client";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useEffect } from "react";
+import { useState, useRef } from "react";
+import { Loader2, Download } from "lucide-react";
 import { getAnalysis, getScores, getIssues, getRecommendations, getIntelligence, getStrengthsWeaknesses, getPrompts } from "@/lib/api";
 import ScoresPanel from "@/components/ScoresPanel";
 import IssuesPanel from "@/components/IssuesPanel";
@@ -29,6 +30,7 @@ const STATUS_LABELS: Record<string, string> = {
 export default function AnalysisPage() {
   const { id } = useParams<{ id: string }>();
   const [tab, setTab] = useState("Overview");
+  const [printMode, setPrintMode] = useState<"ALL" | "CURRENT">("ALL");
 
   const { data: analysis, isLoading } = useQuery({
     queryKey: ["analysis", id],
@@ -75,12 +77,22 @@ export default function AnalysisPage() {
     enabled: isComplete,
   });
 
+  const handlePrintAll = () => {
+    setPrintMode("ALL");
+    setTimeout(() => window.print(), 100);
+  };
+
+  const handlePrintCurrent = () => {
+    setPrintMode("CURRENT");
+    setTimeout(() => window.print(), 100);
+  };
+
   if (isLoading) return <div className="flex items-center justify-center min-h-screen text-gray-400">Loading...</div>;
 
   return (
     <div className="min-h-screen bg-gray-950">
-      {/* Header */}
-      <div className="border-b border-gray-800 bg-gray-900 px-6 py-4">
+      {/* Header - Hidden during print */}
+      <div className="border-b border-gray-800 bg-gray-900 px-6 py-4 no-print">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div>
             <h1 className="text-white font-semibold text-lg truncate max-w-xl">{analysis?.url}</h1>
@@ -95,12 +107,30 @@ export default function AnalysisPage() {
           {analysis?.status === "failed" && (
             <span className="text-red-400 text-sm">{analysis.error}</span>
           )}
+          {isComplete && (
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handlePrintCurrent}
+                className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm border border-gray-700"
+              >
+                <Download className="w-4 h-4" />
+                Download {tab}
+              </button>
+              <button
+                onClick={handlePrintAll}
+                className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors text-sm"
+              >
+                <Download className="w-4 h-4" />
+                Download All
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Progress bar while running */}
       {POLLING_STATUSES.includes(analysis?.status) && (
-        <div className="h-1 bg-gray-800">
+        <div className="h-1 bg-gray-800 no-print">
           <div className="h-1 bg-blue-500 animate-pulse w-1/2" />
         </div>
       )}
@@ -112,8 +142,8 @@ export default function AnalysisPage() {
             <BlockedAnalysisPanel url={analysis.url} error={analysis.error} />
           ) : (
             <>
-          {/* Tabs */}
-          <div className="border-b border-gray-800 bg-gray-900 px-6">
+          {/* Tabs - Hidden during print */}
+          <div className="border-b border-gray-800 bg-gray-900 px-6 no-print">
             <div className="max-w-7xl mx-auto flex gap-1">
               {TABS.map((t) => (
                 <button
@@ -136,8 +166,8 @@ export default function AnalysisPage() {
             </div>
           </div>
 
-          {/* Tab Content */}
-          <div className="max-w-7xl mx-auto px-6 py-8">
+          {/* Tab Content - Hidden during print */}
+          <div className="max-w-7xl mx-auto px-6 py-8 no-print">
             {tab === "Overview" && (
               <div className="space-y-8">
                 <ScoresPanel scores={scores} />
@@ -151,6 +181,58 @@ export default function AnalysisPage() {
           </div>
             </>
           )}
+
+          {/* Hidden container for PDF generation */}
+          <div id="report-container" className="hidden print-only p-8 max-w-[1000px] mx-auto bg-gray-900 text-gray-100">
+            <div className="mb-8 border-b border-gray-800 pb-6">
+              <h1 className="text-3xl font-bold text-white">
+                {printMode === "ALL" ? "AI Listing Engine Report" : `${tab} Report`}
+              </h1>
+              <p className="text-gray-400 mt-2 text-lg">{analysis?.url}</p>
+              <p className="text-gray-500 mt-1 text-sm">Generated on {new Date().toLocaleString()}</p>
+            </div>
+            
+            <div className="space-y-12">
+              {(printMode === "ALL" || tab === "Overview") && (
+                <div>
+                  <h2 className="text-xl font-semibold mb-4 text-white">Executive Summary & Scores</h2>
+                  <ScoresPanel scores={scores} />
+                  <div className="mt-8">
+                    <h2 className="text-xl font-semibold mb-4 text-white">Website Overview</h2>
+                    <WebsiteOverviewPanel intelligence={intelligence} issues={issues ?? []} strengthsWeaknesses={strengthsWeaknesses} />
+                  </div>
+                </div>
+              )}
+              
+              {(printMode === "ALL" || tab === "Issues") && (
+                <div>
+                  <h2 className="text-xl font-semibold mb-4 text-white">Issues Detected</h2>
+                  <IssuesPanel issues={issues ?? []} />
+                </div>
+              )}
+
+              {(printMode === "ALL" || tab === "Intelligence") && (
+                <div>
+                  <h2 className="text-xl font-semibold mb-4 text-white">AI Intelligence Profile</h2>
+                  <IntelligencePanel intelligence={intelligence} />
+                </div>
+              )}
+
+              {(printMode === "ALL" || tab === "Recommendations") && (
+                <div>
+                  <h2 className="text-xl font-semibold mb-4 text-white">Recommendations</h2>
+                  <RecommendationsPanel recommendations={recommendations ?? []} />
+                </div>
+              )}
+
+              {(printMode === "ALL" || tab === "Prompts") && (
+                <div>
+                  <h2 className="text-xl font-semibold mb-4 text-white">AI Prompts</h2>
+                  <PromptsPanel prompts={prompts ?? []} analysisId={id} />
+                </div>
+              )}
+            </div>
+          </div>
         </>
       )}
     </div>

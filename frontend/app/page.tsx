@@ -1,25 +1,53 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { startAnalysis } from "@/lib/api";
+import { normalizeUrl, isValidUrl } from "@/lib/utils";
 
 export default function HomePage() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [successMsg, setSuccessMsg] = useState("");
   const router = useRouter();
+
+  useEffect(() => {
+    const saved = localStorage.getItem("lastAnalyzedUrl");
+    if (saved) setUrl(saved);
+  }, []);
+
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    let val = e.target.value;
+    if (val.length === 1 && !val.startsWith("h") && !val.startsWith("w")) {
+      setUrl("https://www." + val);
+    } else {
+      setUrl(val);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!url.trim()) return;
+    const finalUrl = normalizeUrl(url);
+    if (!isValidUrl(finalUrl)) {
+      setError("Please enter a valid website URL.");
+      return;
+    }
+    
+    setUrl(finalUrl); // update input visually
+    localStorage.setItem("lastAnalyzedUrl", finalUrl);
+    
     setLoading(true);
     setError("");
+    setSuccessMsg("Analysis started...");
+    
     try {
-      const data = await startAnalysis(url.trim());
+      const data = await startAnalysis(finalUrl);
       router.push(`/analysis/${data.id}`);
     } catch {
       setError("Failed to start analysis. Check the URL and try again.");
       setLoading(false);
+      setSuccessMsg("");
     }
   };
 
@@ -33,25 +61,37 @@ export default function HomePage() {
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex gap-3">
+        <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3">
           <input
             type="url"
             value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://yourwebsite.com"
+            onChange={handleUrlChange}
+            onBlur={(e) => {
+               if (e.target.value) setUrl(normalizeUrl(e.target.value));
+            }}
+            placeholder="Enter website (e.g. https://www.example.com)"
             required
             className="flex-1 bg-gray-900 border border-gray-700 rounded-lg px-4 py-3 text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 text-base"
           />
           <button
             type="submit"
-            disabled={loading}
-            className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold px-6 py-3 rounded-lg transition-colors"
+            disabled={loading || !url.trim()}
+            className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-semibold px-6 py-3 rounded-lg transition-colors flex items-center justify-center min-w-[140px]"
           >
-            {loading ? "Starting..." : "Analyze"}
+            {loading ? (
+              <>
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                Starting
+              </>
+            ) : (
+              "Analyze"
+            )}
           </button>
         </form>
 
-        {error && <p className="mt-4 text-red-400 text-sm text-center">{error}</p>}
+        {/* Toast Notifications */}
+        {error && <p className="mt-4 text-red-400 text-sm text-center bg-red-900/20 py-2 rounded">{error}</p>}
+        {successMsg && !error && <p className="mt-4 text-green-400 text-sm text-center bg-green-900/20 py-2 rounded">{successMsg}</p>}
 
         <div className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4">
           {["SEO Audit", "AEO Analysis", "AI Readiness", "Prompt Playground"].map((label) => (
