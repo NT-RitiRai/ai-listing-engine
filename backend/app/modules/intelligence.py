@@ -178,9 +178,9 @@ class WebsiteIntelligenceEngine:
                 "business_summary": ai_profile.get("business_summary"),
                 "target_audience": ai_profile.get("target_audience"),
                 "unique_selling_points": ai_profile.get("unique_selling_points", []),
-                "products": aggregated["products"],
-                "services": aggregated["services"],
-                "locations": aggregated["locations"],
+                "products": ai_profile["products"] if "products" in ai_profile else aggregated["products"],
+                "services": ai_profile["services"] if "services" in ai_profile else aggregated["services"],
+                "locations": ai_profile["locations"] if "locations" in ai_profile else aggregated["locations"],
                 "brands": aggregated["brands"],
                 "primary_topics": ai_profile.get("primary_topics", []),
                 "secondary_topics": ai_profile.get("secondary_topics", []),
@@ -293,6 +293,9 @@ Return JSON with these exact keys:
 - secondary_topics (array of strings, max 8)
 - entities (array of strings - brands, people, places, organizations mentioned)
 - content_clusters (array of strings - main content themes)
+- locations (array of strings - ONLY actual geographical cities, states, countries, or regions mentioned. Filter out random words.)
+- services (array of strings - ONLY actual services provided by the business)
+- products (array of strings - ONLY actual physical or digital products sold by the business)
 
 Return only valid JSON, no explanation."""
 

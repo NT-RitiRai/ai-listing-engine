@@ -232,43 +232,36 @@ class PerformanceOptimizedCrawler:
                 self.http_client.close()
 
     async def _fetch_page_httpx_first(self, url: str) -> tuple[str, int, bool, str]:
-        """HTTPX fetch first; if content looks JS-rendered (no title/h1), try Playwright."""
-        logger.info(f"  [HTTPX Started] {url}")
+        """HTTPX fetch first; if content looks JS-rendered (no links), try Playwright."""
+        logger.info(f"  [Fetching] {url}")
 
-        html, status_code = "", 0
-        for attempt in range(3):
+        html, status_code = await self._fetch_with_httpx(url)
+        
+        if not html or len(html) <= 200:
+            logger.debug(f"  [HTTPX Retry] Retrying {url}...")
+            await asyncio.sleep(1)
             html, status_code = await self._fetch_with_httpx(url)
-            if html and len(html) > 200:
-                logger.info(f"  [HTTPX Success] {url} - {len(html)} bytes (Attempt {attempt+1})")
-                break
-            if attempt < 2:
-                sleep_time = 2 ** attempt
-                logger.debug(f"  [HTTPX Retry] Retrying {url} in {sleep_time}s...")
-                await asyncio.sleep(sleep_time)
 
         if not html or len(html) <= 200:
-            logger.warning(f"  [HTTPX Failed] {url} after 3 attempts.")
+            logger.warning(f"  [HTTPX Failed] {url}")
             return "", status_code, False, "HTTPX Failed"
 
-        # Check if page is JS-rendered
+        # Check if page is JS-rendered (SPAs often have title but no links in raw HTML)
         soup_check = BeautifulSoup(html, "lxml")
-        has_title = bool(soup_check.title and soup_check.title.string and soup_check.title.string.strip())
-        has_h1 = bool(soup_check.find("h1"))
-        has_og_title = bool(soup_check.find("meta", property="og:title"))
+        has_links = len(soup_check.find_all('a', href=True)) > 2
         
-        if has_title or has_h1 or has_og_title:
+        if has_links:
             return html, status_code, False, ""
             
         # JS-rendered: try Playwright
-        logger.info(f"  [Playwright Started] HTTPX got {len(html)} bytes but insufficient content for {url}")
+        logger.info(f"  [Playwright Started] HTTPX got {len(html)} bytes but insufficient links for {url}")
         pw_html, pw_status = await self._fetch_with_playwright(url)
         
         if pw_html and len(pw_html) > len(html):
             logger.info(f"  [Playwright Success] {url} - {len(pw_html)} bytes")
             return pw_html, pw_status, True, ""
             
-        logger.info(f"  [Fallback Reason] Playwright insufficient or failed, falling back to HTTPX result for {url}")
-        return html, status_code, False, "Playwright Failed/Timeout"
+        return html, status_code, False, "Playwright Fallback"
 
     async def _fetch_with_httpx(self, url: str) -> tuple[str, int]:
         """Fetch with HTTPX (now using curl_cffi for bot bypass) using persistent client."""
@@ -356,70 +349,97 @@ class PerformanceOptimizedCrawler:
             return "", 0
 
     async def _crawl_pages_concurrent(self, seeds: list[str], base: str) -> dict[str, RawPage]:
-        """Crawl pages concurrently with semaphore."""
+        """Crawl pages concurrently using BFS queue to follow links recursively."""
         visited: dict[str, RawPage] = {}
-        semaphore = asyncio.Semaphore(5)  # Max 5 concurrent requests
+        in_progress = set()
+        
+        queue = asyncio.Queue()
+        for s in seeds:
+            queue.put_nowait(s)
+            
+        semaphore = asyncio.Semaphore(15)  # Max 15 concurrent requests for speed
         
         self.stats_skipped = 0
         self.stats_timed_out = 0
         self.stats_blocked = 0
         
         async def fetch_and_parse(url: str) -> Optional[RawPage]:
-            async with semaphore:
-                try:
-                    # Apply a per-page strict timeout across the entire pipeline
-                    html, status_code, _, fallback = await asyncio.wait_for(
-                        self._fetch_page_httpx_first(url),
-                        timeout=45.0
-                    )
-                    
-                    if self._is_cloudflare_blocked(html, status_code):
-                        logger.warning(f"  [Blocked] {url} blocked by Cloudflare/Bot Protection")
-                        self.stats_blocked += 1
-                        return None
-                    
-                    if not html:
-                        self.stats_timed_out += 1
-                        return None
-                    
-                    soup = BeautifulSoup(html, "lxml")
-                    page = RawPage(
-                        url=url,
-                        html=html,
-                        status_code=status_code,
-                        headers={},
-                        metadata=self._extract_metadata(soup),
-                        internal_links=self._extract_links(soup, url, base, internal=True),
-                        external_links=self._extract_links(soup, url, base, internal=False),
-                        images=[],
-                        scripts=[s.get("src", "") for s in soup.find_all("script", src=True)],
-                        stylesheets=[l.get("href", "") for l in soup.find_all("link", rel="stylesheet")],
-                        json_ld=self._extract_json_ld(soup),
-                        canonical=self._get_attr(soup, "link[rel='canonical']", "href"),
-                        robots_meta=self._get_attr(soup, "meta[name='robots']", "content"),
-                        og_tags={t.get("property", "").replace("og:", ""): t.get("content", "")
-                                 for t in soup.find_all("meta", property=re.compile(r"^og:"))},
-                        twitter_tags={t.get("name", "").replace("twitter:", ""): t.get("content", "")
-                                      for t in soup.find_all("meta", attrs={"name": re.compile(r"^twitter:")})},
-                    )
-                    return page
-                except asyncio.TimeoutError:
-                    logger.warning(f"  [Timeout Reason] Global per-page timeout for {url}")
+            try:
+                html, status_code, _, fallback = await asyncio.wait_for(
+                    self._fetch_page_httpx_first(url),
+                    timeout=30.0
+                )
+                
+                if self._is_cloudflare_blocked(html, status_code):
+                    self.stats_blocked += 1
+                    return None
+                
+                if not html:
                     self.stats_timed_out += 1
                     return None
-                except Exception as e:
-                    logger.warning(f"  [Error] Failed to process {url}: {e}")
-                    self.stats_skipped += 1
-                    return None
+                
+                soup = BeautifulSoup(html, "lxml")
+                page = RawPage(
+                    url=url,
+                    html=html,
+                    status_code=status_code,
+                    headers={},
+                    metadata=self._extract_metadata(soup),
+                    internal_links=self._extract_links(soup, url, base, internal=True),
+                    external_links=self._extract_links(soup, url, base, internal=False),
+                    images=[],
+                    scripts=[s.get("src", "") for s in soup.find_all("script", src=True)],
+                    stylesheets=[l.get("href", "") for l in soup.find_all("link", rel="stylesheet")],
+                    json_ld=self._extract_json_ld(soup),
+                    canonical=self._get_attr(soup, "link[rel='canonical']", "href"),
+                    robots_meta=self._get_attr(soup, "meta[name='robots']", "content"),
+                    og_tags={t.get("property", "").replace("og:", ""): t.get("content", "")
+                             for t in soup.find_all("meta", property=re.compile(r"^og:"))},
+                    twitter_tags={t.get("name", "").replace("twitter:", ""): t.get("content", "")
+                                  for t in soup.find_all("meta", attrs={"name": re.compile(r"^twitter:")})},
+                )
+                return page
+            except asyncio.TimeoutError:
+                self.stats_timed_out += 1
+                return None
+            except Exception as e:
+                self.stats_skipped += 1
+                return None
+
+        async def worker():
+            while len(visited) < self.max_pages:
+                try:
+                    url = queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+                    
+                if url in visited or url in in_progress:
+                    queue.task_done()
+                    continue
+                    
+                in_progress.add(url)
+                
+                async with semaphore:
+                    page = await fetch_and_parse(url)
+                    if page:
+                        visited[url] = page
+                        # Enqueue new links (BFS)
+                        for link in page.internal_links:
+                            if link not in visited and link not in in_progress:
+                                queue.put_nowait(link)
+                queue.task_done()
+
+        # Start workers
+        workers = [asyncio.create_task(worker()) for _ in range(15)]
         
-        # Fetch all pages concurrently
-        tasks = [fetch_and_parse(url) for url in seeds]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        for url, page in zip(seeds, results):
-            if isinstance(page, RawPage):
-                visited[url] = page
-        
+        # Wait until queue is empty or we hit max pages
+        while not queue.empty() and len(visited) < self.max_pages:
+            await asyncio.sleep(0.5)
+            
+        # Cancel remaining workers
+        for w in workers:
+            w.cancel()
+            
         return visited
 
     async def _fetch_text(self, url: str) -> Optional[str]:

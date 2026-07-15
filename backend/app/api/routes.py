@@ -216,6 +216,121 @@ async def analyze_prompt(prompt_id: str, db: AsyncSession = Depends(get_db)):
     }
     results = await playground.analyze(prompt.prompt_text, intelligence_dict)
 
+    executor = AISearchExecutor(db)
+    
+    # 1. Ensure global prompt exists to satisfy FK
+    result_p = await db.execute(select(AIPrompt).where(AIPrompt.prompt == prompt.prompt_text))
+    global_prompt = result_p.scalar_one_or_none()
+    if not global_prompt:
+        global_prompt = AIPrompt(prompt=prompt.prompt_text, intent=prompt.intent)
+        db.add(global_prompt)
+        await db.commit()
+        await db.refresh(global_prompt)
+
+    live_results = {}
+    for provider_name in ["openai", "gemini"]:
+        try:
+            # 2. Ensure provider exists to satisfy FK
+            provider_record = await db.execute(select(Provider).where(Provider.name == provider_name))
+            provider_db = provider_record.scalar_one_or_none()
+            if not provider_db:
+                provider_db = Provider(name=provider_name)
+                db.add(provider_db)
+                await db.commit()
+                await db.refresh(provider_db)
+                
+            run = await executor.execute_prompt(global_prompt.id, prompt.prompt_text, provider_db.id, provider_name, prompt.analysis_id)
+            
+            # Fetch the citations
+            run_result = await db.execute(select(Citation).where(Citation.prompt_run_id == run.id))
+            citations = run_result.scalars().all()
+            
+            # Fetch competitors
+            from app.models.models import CompetitorMention
+            comp_result = await db.execute(select(CompetitorMention).where(CompetitorMention.prompt_run_id == run.id))
+            competitors = comp_result.scalars().all()
+            
+            import json
+            remediation = {}
+            if run.remediation_note:
+                try:
+                    remediation = json.loads(run.remediation_note)
+                except:
+                    remediation = {"status": run.remediation_note, "evidence": [], "recommendations": []}
+
+            live_results[provider_name] = {
+                "status": run.status,
+                "error": run.error,
+                "latency": round(run.latency, 2) if run.latency else 0,
+                "citations_found": len(citations),
+                "citations": [{"title": c.citation_title, "url": c.citation_url, "snippet": c.response_snippet} for c in citations],
+                "competitors": [{"name": c.competitor_name, "count": c.times_cited} for c in competitors],
+                "remediation_note": remediation,
+                "full_response": run.full_response,
+                "validation": {
+                    "valid": run.valid_response,
+                    "relevance_score": run.relevance_score,
+                    "reason": run.validation_reason,
+                    "category": run.prompt_category
+                },
+                "brand_mentions": run.brand_mentions_count,
+                "product_mentions": run.product_mentions_count
+            }
+        except Exception as e:
+            logger.error(f"Error executing {provider_name}: {e}", exc_info=True)
+            live_results[provider_name] = {"status": "failed", "error": str(e)}
+
+    results["live"] = live_results
     prompt.playground_results = results
     await db.commit()
     return {"prompt_id": prompt_id, "prompt_text": prompt.prompt_text, "results": results}
+
+# --- AI Search Intelligence Endpoints ---
+
+from app.models.models import Provider, Prompt as AIPrompt, PromptRun, Citation, VisibilityMetric
+from app.providers import PROVIDER_REGISTRY
+from app.modules.ai_search_executor import AISearchExecutor
+from app.modules.prompt_manager import PromptManager
+
+@router.get("/providers")
+async def get_providers():
+    return [{"name": name, "enabled": True} for name in PROVIDER_REGISTRY.keys()]
+
+@router.get("/prompts")
+async def get_ai_prompts(db: AsyncSession = Depends(get_db)):
+    manager = PromptManager(db)
+    return await manager.get_all_prompts()
+
+@router.post("/prompts")
+async def create_ai_prompt(prompt_text: str, intent: str, db: AsyncSession = Depends(get_db)):
+    manager = PromptManager(db)
+    return await manager.create_prompt({
+        "prompt": prompt_text,
+        "intent": intent
+    })
+
+@router.post("/prompt/run")
+async def run_ai_prompt(prompt_id: str, provider_name: str, db: AsyncSession = Depends(get_db)):
+    manager = PromptManager(db)
+    prompt = await manager.get_prompt_by_id(prompt_id)
+    if not prompt:
+        raise HTTPException(404, "Prompt not found")
+        
+    executor = AISearchExecutor(db)
+    # create a mock provider_id for now or fetch from DB
+    provider_id = "mock_provider_id"
+    run = await executor.execute_prompt(prompt_id, prompt.prompt, provider_id, provider_name)
+    return {"run_id": run.id, "status": run.status, "latency": run.latency}
+
+@router.get("/citations")
+async def get_citations(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Citation).limit(100))
+    citations = result.scalars().all()
+    return citations
+
+@router.get("/visibility")
+async def get_visibility_metrics(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(VisibilityMetric).limit(100))
+    metrics = result.scalars().all()
+    return metrics
+

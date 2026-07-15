@@ -16,6 +16,12 @@ export const getScores = (id: string) =>
 export const getIssues = (id: string, category?: string) =>
   api.get(`/analyses/${id}/issues`, { params: { category } }).then((r) => r.data);
 
+export const getProviders = () => api.get("/providers").then((r) => r.data);
+
+export const getAiPrompts = () => api.get("/prompts").then((r) => r.data);
+
+export const getVisibilityMetrics = () => api.get("/visibility").then((r) => r.data);
+
 export const getRecommendations = (id: string) =>
   api.get(`/analyses/${id}/recommendations`).then((r) => r.data);
 

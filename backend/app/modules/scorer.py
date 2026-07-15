@@ -19,7 +19,7 @@ class ScoreEngine:
     - High scores (>95) are validated against actual crawl data
     """
 
-    def calculate(self, issues: list[dict], extracted_content: dict) -> dict:
+    def calculate(self, issues: list[dict], extracted_content: dict, profile: dict = None) -> dict:
         """Calculate all scores with full transparency."""
         
         # Handle empty data
@@ -42,13 +42,13 @@ class ScoreEngine:
         seo_score, seo_breakdown = self._calculate_seo(issues, signals)
         aeo_score, aeo_breakdown = self._calculate_aeo(issues, signals)
         ai_score, ai_breakdown = self._calculate_ai(issues, signals)
-        geo_score, geo_breakdown = self._calculate_geo(issues, signals)
+        geo_score, geo_breakdown = self._calculate_geo(issues, signals, profile)
         
         # Validate scores before returning
         seo_score = self._validate_seo_score(seo_score, signals, issues)
         aeo_score = self._validate_aeo_score(aeo_score, signals, issues)
         ai_score = self._validate_ai_score(ai_score, signals, issues)
-        geo_score = self._validate_geo_score(geo_score, signals, issues)
+        geo_score = self._validate_geo_score(geo_score, signals, issues, profile)
         
         # Calculate overall with transparent weighting
         overall_score = self._calculate_overall(seo_score, aeo_score, ai_score, geo_score)
@@ -539,7 +539,7 @@ class ScoreEngine:
 
     # ── GEO Score ─────────────────────────────────────────────────────────
 
-    def _calculate_geo(self, issues: list[dict], signals: dict) -> tuple[int, dict]:
+    def _calculate_geo(self, issues: list[dict], signals: dict, profile: dict = None) -> tuple[int, dict]:
         """Calculate GEO (Geographic) score."""
         
         page_count = max(signals["page_count"], 1)
@@ -554,6 +554,9 @@ class ScoreEngine:
         
         # Location pages (20 points max)
         location_pages = signals["location_pages"]
+        if location_pages == 0 and profile and profile.get("locations"):
+            location_pages = len(profile["locations"])
+            
         location_points = min(20, location_pages * 5)
         breakdown["signals"]["location_pages"] = {
             "pages": location_pages,
@@ -572,7 +575,13 @@ class ScoreEngine:
         
         # Contact information (20 points max)
         contact_pages = signals["pages_with_phones"] + signals["pages_with_emails"]
-        contact_points = min(20, (contact_pages / page_count) * 20)
+        if contact_pages == 0 and profile and ("phone" in str(profile).lower() or "email" in str(profile).lower() or "contact" in str(profile).lower()):
+            contact_pages = 1
+            
+        contact_points = min(20, (contact_pages / page_count) * 20 if contact_pages > 0 else 0)
+        # Give full contact points if AI found it
+        if contact_pages > 0 and signals["pages_with_phones"] + signals["pages_with_emails"] == 0:
+            contact_points = 20
         breakdown["signals"]["contact_information"] = {
             "pages": contact_pages,
             "percentage": round((contact_pages / page_count) * 100),
@@ -590,6 +599,9 @@ class ScoreEngine:
         
         # About/Team pages (15 points max)
         about_pages = signals["about_pages"]
+        if about_pages == 0 and profile and "about" in str(profile).lower():
+            about_pages = 1
+            
         about_points = min(15, about_pages * 7.5)
         breakdown["signals"]["about_pages"] = {
             "pages": about_pages,
@@ -610,10 +622,10 @@ class ScoreEngine:
         
         # Missing signals
         if location_pages == 0:
-            breakdown["missing"].append("No location-specific pages detected")
+            breakdown["missing"].append("No location-specific pages or entities detected")
         if not has_local_schema:
             breakdown["missing"].append("No LocalBusiness schema detected")
-        if signals["pages_with_phones"] == 0 and signals["pages_with_emails"] == 0:
+        if contact_pages == 0:
             breakdown["missing"].append("No contact information found")
         if signals["pages_with_reviews"] == 0:
             breakdown["missing"].append("No reviews detected")
@@ -687,11 +699,13 @@ class ScoreEngine:
         
         return score
 
-    def _validate_geo_score(self, score: int, signals: dict, issues: list[dict]) -> int:
+    def _validate_geo_score(self, score: int, signals: dict, issues: list[dict], profile: dict = None) -> int:
         """Validate GEO score - high scores must be justified by data."""
         if score > 95:
             has_local_schema = any(s in signals["schema_types"] for s in ["LocalBusiness", "Organization", "Store"])
             location_pages = signals["location_pages"]
+            if location_pages == 0 and profile and profile.get("locations"):
+                location_pages = len(profile["locations"])
             
             # Require local schema and location pages for scores > 95
             if not has_local_schema or location_pages == 0:

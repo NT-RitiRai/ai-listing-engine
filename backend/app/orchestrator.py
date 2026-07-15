@@ -83,8 +83,7 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
 
     if crawl_result.is_blocked:
         logger.warning(f"[STEP 1] Crawl blocked: {crawl_result.block_type} -- {crawl_result.block_reason}")
-        if crawl_result.block_type in ("Connection Error", "Error"):
-            raise RuntimeError(f"Crawl failed: {crawl_result.block_reason}")
+        raise RuntimeError(f"Crawl failed: {crawl_result.block_reason} ({crawl_result.block_type})")
 
     # STEP 1.5: Validate + Save crawl
     logger.info("[STEP 1.5] Crawl quality validation START")
@@ -142,8 +141,11 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
         t_elapsed = time.time() - t
         logger.info(f"[STEP 2.5] Validation END -- valid={is_valid} in {t_elapsed:.1f}s")
         if not is_valid:
-            logger.warning(f"[STEP 2.5] Validation FAILED (Bypassed): {reason}")
-            # raise RuntimeError(reason)  # Validation removed per user request
+            if len(extracted_content) == 0:
+                logger.error(f"[STEP 2.5] Validation FAILED (Fatal): {reason}")
+                raise RuntimeError(reason)
+            else:
+                logger.warning(f"[STEP 2.5] Validation FAILED (Bypassed): {reason}")
     except Exception as e:
         if isinstance(e, RuntimeError):
             raise
@@ -237,7 +239,7 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
         logger.info("[STEP 5] Creating scorer...")
         scorer = ScoreEngine()
         logger.info("[STEP 5] Calculating scores...")
-        score_data = scorer.calculate(detected_issues, extracted_content)
+        score_data = scorer.calculate(detected_issues, extracted_content, profile)
         db.add(Scores(analysis_id=analysis_id, **score_data))
         await db.commit()
         t_elapsed = time.time() - t

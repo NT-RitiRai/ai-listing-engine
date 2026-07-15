@@ -227,16 +227,6 @@ class PromptPlaygroundEngine:
                 "faq_coverage": 0.10, "content_depth": 0.10, "topic_coverage": 0.10,
                 "authority": 0.10, "freshness": 0.04, "intent_alignment": 0.04,
             },
-            "Claude": {
-                "content_depth": 0.24, "heading_coverage": 0.14, "entity_coverage": 0.12,
-                "topic_coverage": 0.12, "authority": 0.12, "faq_coverage": 0.10,
-                "schema_coverage": 0.08, "freshness": 0.04, "intent_alignment": 0.04,
-            },
-            "Perplexity": {
-                "faq_coverage": 0.22, "freshness": 0.18, "authority": 0.16,
-                "heading_coverage": 0.12, "entity_coverage": 0.12, "content_depth": 0.10,
-                "schema_coverage": 0.06, "topic_coverage": 0.02, "intent_alignment": 0.02,
-            },
         }
         
         result = {}
@@ -376,14 +366,6 @@ class PromptPlaygroundEngine:
             "Gemini": {
                 "likelihood": "very high" if signals.get("schema_coverage", 0) > 50 else "high" if base_score > 60 else "medium",
                 "reason": "Strong structured data coverage" if signals.get("schema_coverage", 0) > 50 else "Needs better schema markup",
-            },
-            "Claude": {
-                "likelihood": "high" if len(citation_readiness.get("evidence_used", [])) > 4 else "medium",
-                "reason": "Good expert authority signals" if "Author Information" in citation_readiness.get("evidence_used", []) else "Needs author credentials",
-            },
-            "Perplexity": {
-                "likelihood": "high" if signals.get("freshness", 0) > 30 and signals.get("authority", 0) > 30 else "medium",
-                "reason": "Good freshness and authority" if signals.get("freshness", 0) > 30 else "Needs more recent content",
             },
         }
         
@@ -535,16 +517,6 @@ class PromptPlaygroundEngine:
                 "strengths": ["Strong schema coverage", "Good entity matching"] if signals.get("schema_coverage", 0) > 50 else [],
                 "weaknesses": ["Weak schema markup"] if signals.get("schema_coverage", 0) < 30 else [],
             },
-            "Claude": {
-                "probability": model_probs.get("Claude", 0),
-                "strengths": ["Detailed explanations available", "Good authority signals"] if signals.get("authority", 0) > 50 else [],
-                "weaknesses": ["Missing authority signals"] if signals.get("authority", 0) < 30 else [],
-            },
-            "Perplexity": {
-                "probability": model_probs.get("Perplexity", 0),
-                "strengths": ["Citations available", "Recent content"] if signals.get("freshness", 0) > 40 else [],
-                "weaknesses": ["Missing recent references"] if signals.get("freshness", 0) < 20 else [],
-            },
         }
     
     def _generate_action_plan(self, weaknesses: list, opportunities: list, signals: dict) -> list:
@@ -639,13 +611,13 @@ Provide insights ONLY about this prompt. Every insight must be traceable to the 
 
 Return a JSON object with:
 
-- "model_analysis": object with keys "ChatGPT","Gemini","Claude","Perplexity" — each with:
+- "model_analysis": object with keys "ChatGPT","Gemini" — each with:
     - "probability": the integer from model_probabilities
     - "analysis": 2-3 sentences specific to THIS prompt vs this platform's preferences
     - "strength": one specific strength for this prompt on this platform
     - "weakness": one specific weakness for this prompt on this platform
 
-- "brand_overview": object with keys "ChatGPT","Gemini","Claude","Perplexity" — each with:
+- "brand_overview": object with keys "ChatGPT","Gemini" — each with:
     - "recognition": "high"|"medium"|"low" (for this prompt)
     - "confidence": integer 0-100
     - "reason": one sentence explaining why this platform would/wouldn't recommend for this prompt
