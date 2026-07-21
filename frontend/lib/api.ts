@@ -36,3 +36,12 @@ export const getPrompts = (id: string) =>
 
 export const analyzePrompt = (promptId: string) =>
   api.post(`/prompts/${promptId}/analyze`).then((r) => r.data);
+
+export const getGeoIntelligence = (id: string) =>
+  api.get(`/analyses/${id}/geo-intelligence`).then((r) => r.data);
+
+export const getCompetitors = (id: string) =>
+  api.get(`/analyses/${id}/competitors`).then((r) => r.data);
+
+export const getCitationReadiness = (id: string) =>
+  api.get(`/analyses/${id}/citation-readiness`).then((r) => r.data);

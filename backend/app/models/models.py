@@ -10,6 +10,7 @@ class AnalysisStatus(str, enum.Enum):
     crawling = "crawling"
     extracting = "extracting"
     analyzing = "analyzing"
+    analyzing_competitors = "analyzing_competitors"
     scoring = "scoring"
     generating_prompts = "generating_prompts"
     completed = "completed"
@@ -65,6 +66,8 @@ class WebsiteIntelligence(Base):
     unique_selling_points: Mapped[list] = mapped_column(JSON, default=list)
     content_clusters: Mapped[list] = mapped_column(JSON, default=list)
     extracted_content: Mapped[dict] = mapped_column(JSON, default=dict)
+    business_context: Mapped[dict] = mapped_column(JSON, default=dict)  # Complete context from ContextEngine
+    query_intents: Mapped[list] = mapped_column(JSON, default=list) # Query intents mapped by IntentEngine
     website_type: Mapped[str | None] = mapped_column(String, nullable=True)
     website_type_confidence: Mapped[int] = mapped_column(Integer, default=0)
     crawl_quality_confidence: Mapped[int] = mapped_column(Integer, default=0)
@@ -129,6 +132,9 @@ class Competitors(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     analysis_id: Mapped[str] = mapped_column(ForeignKey("analyses.id"), unique=True)
     competitors: Mapped[list] = mapped_column(JSON, default=list)  # [{domain, name, similarity_score, ...}, ...]
+    insight_analysis: Mapped[dict] = mapped_column(JSON, default=dict) # Why they win, why we lost
+    opportunity_analysis: Mapped[dict] = mapped_column(JSON, default=dict) # Lost recommendations, revenue impact
+    leaderboard: Mapped[list] = mapped_column(JSON, default=list) # AI Visibility Leaderboard
 
     analysis: Mapped["Analysis"] = relationship("Analysis", back_populates="competitors")
 
@@ -280,6 +286,24 @@ class ProviderLog(Base):
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     
     provider: Mapped["Provider"] = relationship("Provider", back_populates="logs")
+
+class GEOIntelligence(Base):
+    __tablename__ = "geo_intelligence"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    analysis_id: Mapped[str] = mapped_column(ForeignKey("analyses.id"), unique=True)
+    evidence_object: Mapped[dict] = mapped_column(JSON, default=dict)
+    executive_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    business_risks: Mapped[list] = mapped_column(JSON, default=list)
+    business_opportunities: Mapped[list] = mapped_column(JSON, default=list)
+    growth_opportunities: Mapped[list] = mapped_column(JSON, default=list)
+    ai_recommendation_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    executive_insights: Mapped[list] = mapped_column(JSON, default=list)
+    roadmap_90_day: Mapped[dict] = mapped_column(JSON, default=dict)
+    top_priorities: Mapped[list] = mapped_column(JSON, default=list)
+    expected_outcomes: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 
 class HistoricalScore(Base):
     __tablename__ = "historical_scores"

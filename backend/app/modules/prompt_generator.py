@@ -1,7 +1,7 @@
 """
-Module 7: Prompt Generation Engine
-Input: WebsiteIntelligence profile (includes extracted_content)
-Output: Exactly 5 niche-specific prompts grounded in actual crawled content.
+Module 7: Prompt Generation Engine (Business Intelligence Redesign)
+Input: WebsiteIntelligence profile (includes extracted_content and business_context) + Intents
+Output: Exactly 5 highly contextualized, persona-driven prompts.
 
 CRITICAL: Every LLM call has explicit timeout. Never waits forever.
 """
@@ -13,182 +13,138 @@ from app.modules.intelligence import _call_llm
 
 logger = logging.getLogger(__name__)
 
-INTENTS = ["informational", "commercial", "transactional", "comparison", "local"]
-FALLBACK_INTENTS = ["informational", "commercial", "transactional", "comparison", "educational"]
-
 # Timeout for LLM calls (seconds)
-LLM_TIMEOUT = 30
-TOTAL_TIMEOUT = 60
-
+LLM_TIMEOUT = 45
 
 class PromptGenerationEngine:
     def __init__(self):
         pass
 
-    async def generate(self, intelligence: dict) -> list[dict]:
-        """Generate 5 niche-specific prompts with timeout protection."""
+    async def generate(self, intelligence: dict, intents: list[str] = None) -> list[dict]:
+        """Generate 5 highly-contextual search prompts."""
         t_start = time.time()
         logger.info("[PROMPT] ===== START =====")
         
         try:
-            has_location = bool(intelligence.get("locations"))
-            intents = INTENTS if has_location else FALLBACK_INTENTS
-            logger.info(f"[PROMPT] Location detected: {has_location}, using intents: {intents}")
+            if not intents:
+                intents = ["Informational", "Commercial", "Comparison", "Local", "Decision Making"]
+                
+            business_context = intelligence.get("business_context", {})
+            if not business_context:
+                logger.warning("[PROMPT] No business context found, using basic intelligence.")
+                business_context = {
+                    "business_name": intelligence.get("brands", ["Unknown"])[0] if intelligence.get("brands") else "Unknown",
+                    "industry": intelligence.get("industry", "Unknown"),
+                    "services": intelligence.get("services", []),
+                    "products": intelligence.get("products", []),
+                    "locations": intelligence.get("locations", []),
+                    "target_audience": intelligence.get("target_audience", "Unknown")
+                }
 
-            # Extract evidence from crawled content
-            logger.info("[PROMPT] Extracting evidence from crawled content...")
-            extracted = intelligence.get("extracted_content", {})
-            all_h1, all_h2, all_faqs, all_prices = [], [], [], []
-            
-            for page in extracted.values():
-                all_h1.extend(page.get("h1", []))
-                all_h2.extend(page.get("h2", []))
-                all_faqs.extend([f["question"] for f in page.get("faqs", [])])
-                all_prices.extend(page.get("prices", []))
+            # Build prompt for LLM
+            logger.info("[PROMPT] Building Context-Aware LLM prompt...")
+            prompt = f"""You are an Expert Prompt Engineer for AI Search (ChatGPT, Gemini, Perplexity).
+Your goal is to generate search prompts that test if an AI model would recommend this business to a potential customer.
 
-            evidence = {
-                "industry": intelligence.get("industry"),
-                "sub_industry": intelligence.get("sub_industry"),
-                "business_summary": intelligence.get("business_summary"),
-                "services": intelligence.get("services", [])[:10],
-                "products": intelligence.get("products", [])[:10],
-                "locations": intelligence.get("locations", [])[:5],
-                "entities": intelligence.get("entities", [])[:10],
-                "unique_selling_points": intelligence.get("unique_selling_points", []),
-                "target_audience": intelligence.get("target_audience"),
-                "actual_page_headings": list(dict.fromkeys(all_h1 + all_h2))[:20],
-                "actual_faqs": list(dict.fromkeys(all_faqs))[:10],
-                "prices_found": list(dict.fromkeys(all_prices))[:5],
-                "page_count": len(extracted),
-                "competitors": [c.get("name") for c in intelligence.get("competitors", [])][:3] if isinstance(intelligence.get("competitors"), list) else [],
-                "strengths": [s.get("title") for s in intelligence.get("strengths", [])][:3] if isinstance(intelligence.get("strengths"), list) else [],
-                "weaknesses": [w.get("title") for w in intelligence.get("weaknesses", [])][:3] if isinstance(intelligence.get("weaknesses"), list) else [],
-                "issues": [i.get("issue_type") for i in intelligence.get("detected_issues", [])][:3] if isinstance(intelligence.get("detected_issues"), list) else [],
-                "recommendations": [r.get("recommendation") for r in intelligence.get("recommendations", [])][:3] if isinstance(intelligence.get("recommendations"), list) else [],
-            }
-            logger.info(f"[PROMPT] Evidence extracted: {len(evidence)} fields, {len(extracted)} pages")
+BUSINESS CONTEXT:
+{json.dumps(business_context, indent=2)[:3000]}
 
-            # Build prompt
-            logger.info("[PROMPT] Building LLM prompt...")
-            prompt = f"""You are generating AI search prompts for a specific website based on its actual crawled content.
+REQUIRED INTENTS TO COVER:
+{json.dumps(intents)}
 
-Website Evidence (from actual crawl):
-{json.dumps(evidence, indent=2)[:3000]}
-
-Generate exactly 5 search prompts that a real user would type into ChatGPT, Gemini, or Perplexity to find this specific business.
-
+Generate exactly 5 search prompts. 
 Rules:
-- STRICT GROUNDING: Each prompt MUST reference actual services, products, locations, entities, or competitors found in the evidence above.
-- NEVER invent or guess services/products/locations that are not explicitly listed in the evidence.
-- Do NOT use generic phrases like "what is healthcare" or "what is AI".
-- Each prompt must be 3-9 words.
-- Cover these 5 intents in order: {intents}
-- No duplicates.
-- Prompts must be specific enough that only this type of business would rank for them.
+- STRICT GROUNDING: Each prompt MUST reflect how a real, high-intent user in the target audience would search for this specific business's services/products.
+- NEVER invent services or locations not present in the context.
+- Prompts should not be generic (e.g., "what is marketing"). They should be specific to the business's offerings (e.g., "best B2B SaaS marketing agency in London for series A startups").
+- Cover each of the 5 requested intents.
+- Do not mention the business name directly in the prompt unless it's a navigational/brand intent (which should be rare). The goal is to see if the AI *recommends* the business for non-branded searches.
 
 Return a JSON object with key "prompts" containing an array of 5 objects, each with:
-- "prompt": the search query string (specific to this business)
-- "intent": one of {intents}
-- "rationale": one sentence citing which specific crawled evidence (heading/service/location/competitor) justifies this prompt"""
+- "prompt": the search query string (specific to this business context)
+- "intent": the matched intent from the requested list
+- "rationale": one sentence explaining why a user would search this, and why we expect the AI to recommend this business based on its context."""
 
 
             logger.info("[PROMPT] Calling LLM with timeout protection...")
             t_llm = time.time()
             
-            # Call LLM with timeout
             try:
                 raw = await asyncio.wait_for(
-                    _call_llm(prompt),
+                    _call_llm(prompt, json_mode=True),
                     timeout=LLM_TIMEOUT
                 )
-                t_llm_elapsed = time.time() - t_llm
-                logger.info(f"[PROMPT] LLM returned in {t_llm_elapsed:.1f}s")
+                logger.info(f"[PROMPT] LLM returned in {time.time() - t_llm:.1f}s")
             except asyncio.TimeoutError:
                 logger.error(f"[PROMPT] LLM TIMED OUT after {LLM_TIMEOUT}s")
-                logger.info("[PROMPT] Using fallback prompts")
-                return self._fallback_prompts()
+                return self._fallback_prompts(intents, business_context)
             except Exception as e:
-                logger.error(f"[PROMPT] LLM error: {type(e).__name__}: {e}")
-                logger.info("[PROMPT] Using fallback prompts")
-                return self._fallback_prompts()
+                logger.error(f"[PROMPT] LLM error: {e}")
+                return self._fallback_prompts(intents, business_context)
 
             # Parse JSON
-            logger.info("[PROMPT] Parsing JSON response...")
             try:
                 result = json.loads(raw)
-                logger.info("[PROMPT] JSON parsed successfully")
             except json.JSONDecodeError as e:
                 logger.error(f"[PROMPT] JSON parse error: {e}")
-                logger.info("[PROMPT] Using fallback prompts")
-                return self._fallback_prompts()
+                return self._fallback_prompts(intents, business_context)
 
             # Extract prompts
-            logger.info("[PROMPT] Extracting prompts from response...")
-            if isinstance(result, dict):
-                prompts_list = result.get("prompts") or result.get("results") or list(result.values())[0]
-            else:
-                prompts_list = result
+            prompts_list = result.get("prompts") or result.get("results") or list(result.values())[0]
 
-            if not prompts_list:
-                logger.warning("[PROMPT] No prompts in response")
-                return self._fallback_prompts()
+            if not prompts_list or not isinstance(prompts_list, list):
+                return self._fallback_prompts(intents, business_context)
 
             prompts_list = prompts_list[:5]
-            logger.info(f"[PROMPT] Generated {len(prompts_list)} prompts")
             
-            # Validate each prompt
+            # Validate
             validated = []
             for i, p in enumerate(prompts_list):
-                logger.info(f"[PROMPT] Validating prompt {i+1}: {p.get('prompt', 'N/A')}")
                 if isinstance(p, dict) and "prompt" in p and "intent" in p:
                     validated.append(p)
-                    logger.info(f"[PROMPT] Prompt {i+1} valid")
-                else:
-                    logger.warning(f"[PROMPT] Prompt {i+1} invalid format")
 
             if not validated:
-                logger.warning("[PROMPT] No valid prompts after validation")
-                return self._fallback_prompts()
+                return self._fallback_prompts(intents, business_context)
 
-            t_total = time.time() - t_start
-            logger.info(f"[PROMPT] ===== DONE ({len(validated)} prompts in {t_total:.1f}s) =====")
+            logger.info(f"[PROMPT] ===== DONE ({len(validated)} prompts in {time.time() - t_start:.1f}s) =====")
             return validated
 
         except Exception as e:
-            logger.error(f"[PROMPT] Unexpected error: {type(e).__name__}: {e}", exc_info=True)
-            t_total = time.time() - t_start
-            logger.info(f"[PROMPT] ===== FAILED ({t_total:.1f}s) - using fallback =====")
-            return self._fallback_prompts()
+            logger.error(f"[PROMPT] Unexpected error: {e}", exc_info=True)
+            return self._fallback_prompts(["Informational", "Commercial", "Local", "Comparison", "Decision Making"], {})
 
-    def _fallback_prompts(self) -> list[dict]:
+    def _fallback_prompts(self, intents: list[str], context: dict) -> list[dict]:
         """Return fallback prompts if generation fails."""
         logger.info("[PROMPT] Generating fallback prompts...")
+        industry = context.get("industry", "this industry")
+        location = context.get("locations", ["this area"])[0] if context.get("locations") else "my area"
+        service = context.get("services", ["services"])[0] if context.get("services") else "services"
+        
         fallback = [
             {
-                "prompt": "Business inquiry",
-                "intent": "informational",
-                "rationale": "Fallback prompt - LLM generation failed"
+                "prompt": f"Top rated {industry} companies",
+                "intent": intents[0] if len(intents) > 0 else "Informational",
+                "rationale": "Fallback prompt"
             },
             {
-                "prompt": "Service information",
-                "intent": "commercial",
-                "rationale": "Fallback prompt - LLM generation failed"
+                "prompt": f"Best providers for {service}",
+                "intent": intents[1] if len(intents) > 1 else "Commercial",
+                "rationale": "Fallback prompt"
             },
             {
-                "prompt": "How to contact",
-                "intent": "transactional",
-                "rationale": "Fallback prompt - LLM generation failed"
+                "prompt": f"Compare {industry} services",
+                "intent": intents[2] if len(intents) > 2 else "Comparison",
+                "rationale": "Fallback prompt"
             },
             {
-                "prompt": "Compare options",
-                "intent": "comparison",
-                "rationale": "Fallback prompt - LLM generation failed"
+                "prompt": f"{service} in {location}",
+                "intent": intents[3] if len(intents) > 3 else "Local",
+                "rationale": "Fallback prompt"
             },
             {
-                "prompt": "Local availability",
-                "intent": "local",
-                "rationale": "Fallback prompt - LLM generation failed"
+                "prompt": f"Who should I hire for {industry}?",
+                "intent": intents[4] if len(intents) > 4 else "Decision Making",
+                "rationale": "Fallback prompt"
             }
         ]
-        logger.info(f"[PROMPT] Fallback: {len(fallback)} prompts generated")
         return fallback

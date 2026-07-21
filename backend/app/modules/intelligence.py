@@ -19,10 +19,10 @@ GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5
 
 # Timeout constants (seconds)
 CONNECT_TIMEOUT = 10.0
-READ_TIMEOUT = 40.0
+READ_TIMEOUT = 90.0
 WRITE_TIMEOUT = 10.0
 POOL_TIMEOUT = 5.0
-TOTAL_TIMEOUT = 50.0
+TOTAL_TIMEOUT = 100.0
 
 
 async def _call_llm(prompt: str, json_mode: bool = True) -> str:
@@ -40,7 +40,7 @@ async def _call_llm(prompt: str, json_mode: bool = True) -> str:
     # Try OpenAI (up to 2 attempts)
     if settings.OPENAI_API_KEY:
         body = {
-            "model": "gpt-4o-mini",
+            "model": settings.OPENAI_MODEL or "gpt-4o-mini",
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.1,
         }

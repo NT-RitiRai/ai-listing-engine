@@ -137,8 +137,8 @@ class IssueDetectionEngine:
             affected = [u for group in dup_titles for u in group]
             issues.append(DetectedIssue(
                 "seo", "duplicate_title", "high", affected[:10], None,
-                "Ensure each page has a unique title tag.",
-                "Duplicate titles confuse search engines and reduce CTR.",
+                "Clearly differentiate page identities so AI models can accurately route commercial queries to the right service.",
+                "AI assistants cannot distinguish between your offerings, causing them to skip your business in comparison queries.",
                 "easy"
             ))
             logger.info(f"[SEO] Duplicate titles: {len(affected)} pages")
@@ -148,8 +148,8 @@ class IssueDetectionEngine:
             coverage = ((page_count - len(missing_title)) / page_count) * 100
             issues.append(DetectedIssue(
                 "seo", "missing_title", "critical", missing_title[:10], "<title>",
-                "Add a descriptive title tag to every page.",
-                "Missing titles severely hurt rankings.",
+                "Define the exact business value and target entity in the page identity to restore AI indexing confidence.",
+                "AI models lack primary context for this page, leading to a complete loss of visibility for associated products/services.",
                 "easy"
             ))
             logger.info(f"[SEO] Missing titles: {len(missing_title)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -160,8 +160,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "seo", "missing_meta_description", "high", missing_meta[:10],
                 "<meta name='description'>",
-                "Add a unique meta description to every page.",
-                "Missing meta descriptions reduce CTR in search results.",
+                "Provide clear, concise summaries of business value on every page to ensure AI models can accurately describe you to buyers.",
+                "AI assistants could not confidently understand this page because descriptive metadata is missing. This reduces recommendation confidence for commercial searches.",
                 "easy"
             ))
             logger.info(f"[SEO] Missing meta descriptions: {len(missing_meta)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -171,8 +171,8 @@ class IssueDetectionEngine:
             coverage = ((page_count - len(missing_h1)) / page_count) * 100
             issues.append(DetectedIssue(
                 "seo", "missing_h1", "high", missing_h1[:10], "<h1>",
-                "Add a single H1 tag to every page.",
-                "H1 is a primary ranking signal.",
+                "Establish a clear topical hierarchy starting with a strong primary entity declaration.",
+                "Without a primary structural heading, AI models fail to parse the core topic, discarding the page from high-intent answers.",
                 "easy"
             ))
             logger.info(f"[SEO] Missing H1: {len(missing_h1)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -181,8 +181,8 @@ class IssueDetectionEngine:
         if multiple_h1:
             issues.append(DetectedIssue(
                 "seo", "multiple_h1", "medium", multiple_h1[:10], "<h1>",
-                "Use only one H1 per page.",
-                "Multiple H1s dilute heading hierarchy.",
+                "Consolidate the primary page topic into a single, authoritative declaration.",
+                "Conflicting structural signals confuse AI models about the primary subject, reducing your authority score for target entities.",
                 "easy"
             ))
             logger.info(f"[SEO] Multiple H1s: {len(multiple_h1)} pages")
@@ -191,8 +191,8 @@ class IssueDetectionEngine:
         if short_title:
             issues.append(DetectedIssue(
                 "seo", "short_title", "medium", short_title[:10], "<title>",
-                "Expand title tags to 30-65 characters.",
-                "Short titles miss keyword opportunities.",
+                "Expand page context to capture specific buyer intents and niche recommendations.",
+                "Insufficient context prevents AI from associating this page with long-tail, high-conversion commercial queries.",
                 "easy"
             ))
             logger.info(f"[SEO] Short titles: {len(short_title)} pages")
@@ -201,8 +201,8 @@ class IssueDetectionEngine:
         if long_title:
             issues.append(DetectedIssue(
                 "seo", "long_title", "medium", long_title[:10], "<title>",
-                "Shorten title tags to under 65 characters.",
-                "Long titles get truncated in SERPs.",
+                "Refine the page identity to focus strictly on the primary business entity and intent.",
+                "Overly verbose identities dilute the core entity focus, causing AI models to miscategorize the offering.",
                 "easy"
             ))
             logger.info(f"[SEO] Long titles: {len(long_title)} pages")
@@ -212,8 +212,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "seo", "noindex_pages", "critical", noindex_pages[:10],
                 "robots meta",
-                "Review noindex directives. Remove unless intentional.",
-                "Noindex prevents pages from appearing in search.",
+                "Audit AI blocking rules and open commercial pages to AI indexers to recover lost visibility.",
+                "Explicit directives are blocking AI agents from reading this page, resulting in zero visibility for this content.",
                 "medium"
             ))
             logger.info(f"[SEO] Noindex pages: {len(noindex_pages)} pages")
@@ -224,8 +224,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "seo", "missing_canonical", "medium", missing_canonical[:10],
                 "<link rel='canonical'>",
-                "Add canonical tags to all pages.",
-                "Missing canonicals can cause duplicate content issues.",
+                "Establish clear canonical paths to consolidate AI trust signals to your primary pages.",
+                "AI models penalize businesses with ambiguous content structures, reducing trust and citation frequency.",
                 "easy"
             ))
             logger.info(f"[SEO] Missing canonical: {len(missing_canonical)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -236,8 +236,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "seo", "missing_opengraph", "low", missing_og[:10],
                 "<meta property='og:'>",
-                "Add OpenGraph tags for better social sharing.",
-                "Missing OG tags reduce social media visibility.",
+                "Implement OpenGraph data to ensure AI systems parse rich media and brand context correctly.",
+                "Lack of structured graph data reduces your brand\'s footprint across ecosystem integrations used by AI.",
                 "easy"
             ))
             logger.info(f"[SEO] Missing OG tags: {len(missing_og)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -247,8 +247,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "seo", "images_missing_alt", "medium", images_missing_alt[:10],
                 "<img alt>",
-                "Add descriptive alt text to all images.",
-                "Missing alt text hurts accessibility and image SEO.",
+                "Translate all visual business assets into text descriptions to maximize AI comprehension.",
+                "AI models are blind to visual assets without descriptive text, losing valuable context for product and brand association.",
                 "easy"
             ))
             logger.info(f"[SEO] Images missing alt text: {len(images_missing_alt)} pages")
@@ -259,8 +259,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "seo", "missing_internal_links", "medium", missing_internal_links[:10],
                 "<a href>",
-                "Add internal links to connect related pages.",
-                "Internal linking distributes page authority and improves crawlability.",
+                "Build a strong semantic web between your offerings to help AI understand your complete business ecosystem.",
+                "Isolated pages prevent AI models from understanding the relationship between your services, reducing overall domain authority.",
                 "medium"
             ))
             logger.info(f"[SEO] Missing internal links: {len(missing_internal_links)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -270,8 +270,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "seo", "low_external_links", "low", [],
                 "<a href>",
-                "Add external links to authoritative sources.",
-                "External links build topical authority and trust.",
+                "Connect your content to authoritative industry entities to validate your expertise to AI models.",
+                "Lack of outbound citations isolates your business from the broader industry knowledge graph, lowering trust scores.",
                 "medium"
             ))
             logger.info(f"[SEO] Low external linking: {pages_with_external_links}/{page_count} pages")
@@ -327,8 +327,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "aeo", "missing_faq_schema", "high", pages_without_faq[:10],
                 "JSON-LD FAQPage",
-                "Add FAQ schema markup to answer common questions.",
-                "FAQ schema increases chances of featured snippets.",
+                "Deploy conversational schema to feed direct answers into AI memory, positioning your business as the default solution.",
+                "Without structured Q&A data, AI assistants struggle to extract direct answers, costing you voice and conversational search visibility.",
                 "medium"
             ))
             logger.info(f"[AEO] Missing FAQ schema: {len(pages_without_faq)}/{page_count} pages ({coverage:.1f}% coverage, {total_faqs} FAQs found)")
@@ -339,8 +339,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "aeo", "missing_structured_data", "critical",
                 pages_without_schema[:10], "JSON-LD",
-                "Add structured data (JSON-LD) to all pages.",
-                "Structured data is essential for AI and voice search.",
+                "Implement enterprise-grade structured data to explicitly define your products, services, and corporate entities for AI.",
+                "AI models cannot reliably identify your business entities, making it less likely that your website will be cited in AI-generated answers.",
                 "medium"
             ))
             logger.info(f"[AEO] Missing structured data: {len(pages_without_schema)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -351,8 +351,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "aeo", "missing_review_schema", "medium",
                 pages_without_review_schema[:10], "JSON-LD Review",
-                "Add Review/AggregateRating schema where applicable.",
-                "Review schema improves trust signals in SERPs.",
+                "Inject verifiable trust signals directly into the code to increase AI recommendation confidence.",
+                "Missing reputation data prevents AI from verifying your credibility, causing it to recommend trusted competitors instead.",
                 "medium"
             ))
             logger.info(f"[AEO] Missing review schema: {len(pages_without_review_schema)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -363,8 +363,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "aeo", "missing_breadcrumb_schema", "low",
                 pages_without_breadcrumb[:10], "JSON-LD BreadcrumbList",
-                "Add BreadcrumbList schema to all pages.",
-                "Breadcrumbs improve navigation signals.",
+                "Map your business architecture explicitly so AI can correctly categorize your offerings.",
+                "Poor structural context makes it difficult for AI to map your service hierarchy, losing visibility for category-level queries.",
                 "easy"
             ))
             logger.info(f"[AEO] Missing breadcrumb schema: {len(pages_without_breadcrumb)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -375,8 +375,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "aeo", "missing_heading_hierarchy", "medium",
                 pages_without_h2_h3[:10], "<h2>, <h3>",
-                "Add H2 and H3 tags to structure content hierarchically.",
-                "Proper heading hierarchy helps AI models understand content structure.",
+                "Organize business information with strict hierarchical logic to ensure flawless AI parsing.",
+                "Flat content structures force AI to guess your service details, significantly reducing extraction accuracy for complex queries.",
                 "easy"
             ))
             logger.info(f"[AEO] Missing heading hierarchy: {len(pages_without_h2_h3)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -386,8 +386,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "aeo", "weak_entity_coverage", "high", [],
                 "Entity mentions",
-                "Add clear entity mentions (brand, people, locations) throughout content.",
-                "Weak entity coverage reduces AI citation probability.",
+                "Aggressively integrate recognized industry entities, brands, and terminology to anchor your business in the AI knowledge graph.",
+                "Your content lacks recognizable industry entities, making AI perceive your business as an outlier rather than a market leader.",
                 "hard"
             ))
             logger.info(f"[AEO] Weak entity coverage: {len(profile.get('entities', []))} entities detected")
@@ -434,8 +434,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "ai", "missing_llms_txt", "high", ["/llms.txt"],
                 "llms.txt",
-                "Create a /llms.txt file to guide AI crawlers about your content.",
-                "llms.txt helps AI models understand and cite your website.",
+                "Deploy an llms.txt file to spoon-feed high-priority business context and citations directly to AI models.",
+                "Without an AI-specific entry point, modern LLMs default to generic crawling, often missing your most critical commercial data.",
                 "easy"
             ))
             logger.info("[AI] Missing llms.txt")
@@ -447,8 +447,8 @@ class IssueDetectionEngine:
                 issues.append(DetectedIssue(
                     "ai", "missing_ai_crawler_rules", "medium", ["/robots.txt"],
                     "robots.txt",
-                    "Add explicit rules for AI crawlers (GPTBot, anthropic-ai, Google-Extended).",
-                    "Without explicit rules, AI crawlers may not index your content optimally.",
+                    "Update access protocols to explicitly authorize and guide next-generation AI agents to your commercial content.",
+                    "Failing to explicitly welcome AI agents signals poor AI-readiness, potentially deprioritizing your brand in model training.",
                     "easy"
                 ))
                 logger.info("[AI] Missing AI crawler rules in robots.txt")
@@ -458,8 +458,8 @@ class IssueDetectionEngine:
             coverage = ((page_count - len(thin_pages)) / page_count) * 100
             issues.append(DetectedIssue(
                 "ai", "thin_content", "high", thin_pages[:10], "Page content",
-                "Expand thin pages with comprehensive, authoritative content.",
-                "AI models prefer citing comprehensive, well-structured content.",
+                "Transform thin service pages into comprehensive, authoritative guides that dominate AI reference selection.",
+                "Superficial content is instantly discarded by AI models seeking deep, authoritative answers for users.",
                 "hard"
             ))
             logger.info(f"[AI] Thin content: {len(thin_pages)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -470,8 +470,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "ai", "missing_schema_for_ai", "high", pages_without_schema[:10],
                 "JSON-LD",
-                "Add structured data to help AI models understand your content.",
-                "Schema markup is critical for AI model comprehension.",
+                "Wrap all core business assets in strict JSON-LD to guarantee 100% accurate AI extraction.",
+                "Without machine-readable context, AI models treat your business as raw text, ignoring key commercial attributes.",
                 "medium"
             ))
             logger.info(f"[AI] Missing schema: {len(pages_without_schema)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -481,8 +481,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "ai", "low_content_depth", "medium", [],
                 "Page content",
-                "Increase average page word count to 800+ words.",
-                "AI models need substantial content to generate accurate citations.",
+                "Deepen the semantic richness of your content to capture high-intent, long-form AI queries.",
+                "Insufficient topical depth prevents AI from associating your business with complex, high-value buyer queries.",
                 "hard"
             ))
             logger.info(f"[AI] Low content depth: {avg_word_count:.0f} avg words")
@@ -492,8 +492,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "ai", "missing_usp_content", "medium", [],
                 "USP content",
-                "Clearly state your unique value propositions on key pages.",
-                "AI models need clear differentiators to recommend your business.",
+                "Hardcode your unique selling propositions into the text so AI models can explicitly argue why you are the best choice.",
+                "Because your unique value is not explicitly stated, AI defaults to recommending generic competitors over you.",
                 "medium"
             ))
             logger.info(f"[AI] Missing USP content: {len(profile.get('unique_selling_points', []))} USPs detected")
@@ -535,8 +535,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "geo", "missing_local_business_schema", "high",
                 pages_without_local_schema[:10], "JSON-LD LocalBusiness",
-                "Add LocalBusiness schema with address, phone, and hours.",
-                "LocalBusiness schema is critical for local AI search visibility.",
+                "Anchor your physical operations in the AI graph using strict local entity markup to dominate regional search.",
+                "Without strict geographic bounding, AI models exclude your business from high-converting \'near me\' and local service recommendations.",
                 "medium"
             ))
             logger.info(f"[GEO] Missing LocalBusiness schema: {len(pages_without_local_schema)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -547,8 +547,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "geo", "missing_contact_info", "medium", pages_without_contact[:10],
                 "Phone/Email",
-                "Add phone numbers and email addresses to contact pages.",
-                "Contact information is essential for local search visibility.",
+                "Ensure frictionless conversion paths by exposing direct contact entities to AI decision engines.",
+                "Missing contact data prevents AI from fulfilling transactional intents, causing it to route ready-to-buy customers elsewhere.",
                 "easy"
             ))
             logger.info(f"[GEO] Missing contact info: {len(pages_without_contact)}/{page_count} pages ({coverage:.1f}% coverage)")
@@ -558,8 +558,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "geo", "missing_location_signals", "medium", [],
                 "Location content",
-                "Add location-specific content and NAP (Name, Address, Phone) information.",
-                "Missing location signals reduce local search visibility.",
+                "Saturate your digital footprint with consistent geographic entities to secure local market dominance in AI answers.",
+                "Geographic ambiguity causes AI models to pass over your business for localized commercial queries, directly losing regional revenue.",
                 "medium"
             ))
             logger.info("[GEO] Missing location signals in profile")
@@ -569,8 +569,8 @@ class IssueDetectionEngine:
             issues.append(DetectedIssue(
                 "geo", "missing_location_pages", "high", [],
                 "Location pages",
-                "Create dedicated pages for each business location.",
-                "Location pages are critical for local search visibility.",
+                "Deploy highly-targeted regional pages to capture hyper-local AI commercial queries across your entire service area.",
+                "Failing to dedicate pages to specific markets blinds AI to your operational footprint, handing those territories to competitors.",
                 "hard"
             ))
             logger.info("[GEO] Missing location pages")

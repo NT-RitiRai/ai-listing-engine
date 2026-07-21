@@ -1,27 +1,33 @@
 "use client";
 import { useParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Download, LayoutDashboard } from "lucide-react";
-import { getAnalysis, getScores, getIssues, getRecommendations, getIntelligence, getStrengthsWeaknesses, getPrompts } from "@/lib/api";
+import { Download, LayoutDashboard, Briefcase, FileSearch } from "lucide-react";
+import { getAnalysis, getScores, getIssues, getRecommendations, getIntelligence, getStrengthsWeaknesses, getPrompts, getGeoIntelligence, getCompetitors } from "@/lib/api";
 
 import ExecutiveSummary from "@/components/report/ExecutiveSummary";
-import QueryMatrix from "@/components/report/QueryMatrix";
-import AISearchSummary from "@/components/report/AISearchSummary";
-import WhyNotRecommended from "@/components/report/WhyNotRecommended";
-import WebsiteFindings from "@/components/report/WebsiteFindings";
-import ActionPlan from "@/components/report/ActionPlan";
-import ReportCharts from "@/components/report/ReportCharts";
+import RevenueOpportunity from "@/components/report/RevenueOpportunity";
+import AIMarketShare from "@/components/report/AIMarketShare";
+import AIConversationAnalysis from "@/components/report/AIConversationAnalysis";
+import ConsultantRecommendations from "@/components/report/ConsultantRecommendations";
+import GrowthRoadmap90Day from "@/components/report/GrowthRoadmap90Day";
 import BlockedAnalysisPanel from "@/components/BlockedAnalysisPanel";
 
+// New Competitor Components
+import CompetitorLeaderboard from "@/components/report/competitor/CompetitorLeaderboard";
+import CompetitorMatrix from "@/components/report/competitor/CompetitorMatrix";
+import RadarComparison from "@/components/report/competitor/RadarComparison";
+import OpportunityFunnel from "@/components/report/competitor/OpportunityFunnel";
+import CompetitorHeatmap from "@/components/report/competitor/CompetitorHeatmap";
+
 const COMPLETED = "completed";
-const POLLING_STATUSES = ["pending", "crawling", "extracting", "analyzing", "scoring", "generating_prompts"];
+const POLLING_STATUSES = ["pending", "crawling", "extracting", "analyzing", "analyzing_competitors", "scoring", "generating_prompts"];
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "Queued...",
   crawling: "Crawling website...",
   extracting: "Extracting content...",
   analyzing: "Building intelligence profile...",
+  analyzing_competitors: "Analyzing competitor visibility...",
   scoring: "Calculating scores...",
   generating_prompts: "Generating AI prompts...",
   completed: "Analysis complete",
@@ -46,12 +52,6 @@ export default function AnalysisPage() {
     enabled: isComplete,
   });
 
-  const { data: issues } = useQuery({
-    queryKey: ["issues", id],
-    queryFn: () => getIssues(id),
-    enabled: isComplete,
-  });
-
   const { data: recommendations } = useQuery({
     queryKey: ["recommendations", id],
     queryFn: () => getRecommendations(id),
@@ -64,15 +64,15 @@ export default function AnalysisPage() {
     enabled: isComplete,
   });
 
-  const { data: strengthsWeaknesses } = useQuery({
-    queryKey: ["strengthsWeaknesses", id],
-    queryFn: () => getStrengthsWeaknesses(id),
+  const { data: geoIntelligence } = useQuery({
+    queryKey: ["geoIntelligence", id],
+    queryFn: () => getGeoIntelligence(id),
     enabled: isComplete,
   });
 
-  const { data: prompts } = useQuery({
-    queryKey: ["prompts", id],
-    queryFn: () => getPrompts(id),
+  const { data: competitorsData } = useQuery({
+    queryKey: ["competitors", id],
+    queryFn: () => getCompetitors(id),
     enabled: isComplete,
   });
 
@@ -88,11 +88,11 @@ export default function AnalysisPage() {
       <div className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-gray-200 px-6 py-4 no-print shadow-sm">
         <div className="max-w-6xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="bg-blue-600 p-2 rounded-lg text-white">
-              <LayoutDashboard className="w-5 h-5" />
+            <div className="bg-gray-900 p-2 rounded-lg text-white">
+              <Briefcase className="w-5 h-5" />
             </div>
             <div>
-              <h1 className="text-gray-900 font-bold text-lg truncate max-w-xl leading-tight">Enterprise AI Visibility Report</h1>
+              <h1 className="text-gray-900 font-bold text-lg truncate max-w-xl leading-tight">Enterprise AI Strategy Report</h1>
               <p className="text-sm text-gray-500 mt-0.5 font-medium">{analysis?.url}</p>
             </div>
           </div>
@@ -133,51 +133,55 @@ export default function AnalysisPage() {
             <BlockedAnalysisPanel url={analysis.url} error={analysis.error} />
           ) : (
             <div id="report-container" className="space-y-4 print-m-0">
+              
               <div className="mb-10 text-center print-only">
-                <h1 className="text-4xl font-bold text-gray-900 mb-2">Enterprise AI Visibility Report</h1>
+                <h1 className="text-4xl font-bold text-gray-900 mb-2">Enterprise AI Strategy Report</h1>
                 <p className="text-gray-500 text-lg">{analysis?.url}</p>
                 <p className="text-gray-400 text-sm mt-4">Generated on {new Date().toLocaleDateString()}</p>
               </div>
 
+              {/* Step 1: Executive KPI Summary */}
               <ExecutiveSummary
                 analysis={analysis}
                 scores={scores}
                 intelligence={intelligence}
-                recommendations={recommendations}
+                geoIntelligence={geoIntelligence}
               />
 
-              <ReportCharts
-                scores={scores}
-                prompts={prompts}
-                recommendations={recommendations}
-                intelligence={intelligence}
-              />
+              {/* Step 2: Commercial Impact (The "Why Should I Care?") */}
+              <RevenueOpportunity geoIntelligence={geoIntelligence} />
 
-              <QueryMatrix
-                prompts={prompts}
-                scores={scores}
-                analysis={analysis}
-              />
+              {/* Step 3: Current State of Play */}
+              <AIMarketShare aiVisibility={geoIntelligence?.evidence_object?.ai_visibility} />
+              
+              {/* Step 3.5: Enterprise Competitor Intelligence */}
+              {competitorsData && (
+                <div className="space-y-4">
+                  <div className="flex items-center gap-3 pt-12 pb-4">
+                    <h2 className="text-3xl font-bold text-gray-900 border-b-2 border-indigo-500 pb-2">Competitive Intelligence</h2>
+                  </div>
+                  
+                  <CompetitorLeaderboard competitorsData={competitorsData} />
+                  <OpportunityFunnel competitorsData={competitorsData} />
+                  <RadarComparison competitorsData={competitorsData} intelligence={intelligence} />
+                  <CompetitorMatrix competitorsData={competitorsData} />
+                  <CompetitorHeatmap competitorsData={competitorsData} />
+                </div>
+              )}
 
-              <AISearchSummary prompts={prompts} analysisId={id} />
+              {/* Step 4: AI Model Perception Analysis */}
+              <AIConversationAnalysis geoIntelligence={geoIntelligence} />
 
-              <WhyNotRecommended prompts={prompts} />
+              {/* Step 5: Strategic Business Solutions */}
+              <ConsultantRecommendations recommendations={recommendations || []} />
 
-              <WebsiteFindings
-                intelligence={intelligence}
-                issues={issues}
-                strengthsWeaknesses={strengthsWeaknesses}
-              />
-
-              <ActionPlan
-                recommendations={recommendations}
-                prompts={prompts}
-              />
+              {/* Step 6: The Roadmap to Success */}
+              <GrowthRoadmap90Day geoIntelligence={geoIntelligence} />
 
               {/* Footer */}
               <div className="mt-20 pt-8 border-t border-gray-200 text-center text-gray-400 text-sm pb-8">
                 <p>AI Listing Engine &copy; {new Date().getFullYear()}</p>
-                <p className="mt-1">CONFIDENTIAL - For internal business use only.</p>
+                <p className="mt-1">CONFIDENTIAL - Executive Strategy Document</p>
               </div>
             </div>
           )}

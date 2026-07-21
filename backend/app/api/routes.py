@@ -6,7 +6,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 
 from app.database import get_db, AsyncSessionLocal
-from app.models.models import Analysis, AnalysisStatus, CrawlData, WebsiteIntelligence, Scores, Issue, GeneratedPrompt, StrengthsWeaknesses, Competitors
+from app.models.models import Analysis, AnalysisStatus, CrawlData, WebsiteIntelligence, Scores, Issue, GeneratedPrompt, StrengthsWeaknesses, Competitors, GEOIntelligence
 from app.orchestrator import run_analysis
 from app.modules.recommender import RecommendationEngine
 from app.modules.playground import PromptPlaygroundEngine
@@ -141,6 +141,26 @@ async def get_strengths_weaknesses(analysis_id: str, db: AsyncSession = Depends(
     }
 
 
+@router.get("/analyses/{analysis_id}/geo-intelligence")
+async def get_geo_intelligence(analysis_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(GEOIntelligence).where(GEOIntelligence.analysis_id == analysis_id))
+    geo = result.scalar_one_or_none()
+    if not geo:
+        raise HTTPException(404, "GEO Intelligence not ready")
+    return {
+        "evidence_object": geo.evidence_object,
+        "executive_summary": geo.executive_summary,
+        "business_risks": geo.business_risks,
+        "business_opportunities": geo.business_opportunities,
+        "growth_opportunities": geo.growth_opportunities,
+        "ai_recommendation_summary": geo.ai_recommendation_summary,
+        "executive_insights": geo.executive_insights,
+        "roadmap_90_day": geo.roadmap_90_day,
+        "top_priorities": geo.top_priorities,
+        "expected_outcomes": geo.expected_outcomes,
+    }
+
+
 @router.get("/analyses/{analysis_id}/competitors")
 async def get_competitors(analysis_id: str, db: AsyncSession = Depends(get_db)):
     """Get competitor analysis."""
@@ -150,6 +170,9 @@ async def get_competitors(analysis_id: str, db: AsyncSession = Depends(get_db)):
         raise HTTPException(404, "Competitor analysis not ready")
     return {
         "competitors": comp.competitors,
+        "insight_analysis": comp.insight_analysis,
+        "opportunity_analysis": comp.opportunity_analysis,
+        "leaderboard": comp.leaderboard,
     }
 
 

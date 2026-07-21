@@ -10,7 +10,7 @@ import logging
 import time
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.models import Analysis, AnalysisStatus, CrawlData, WebsiteIntelligence, Scores, Issue, GeneratedPrompt, StrengthsWeaknesses, Competitors
+from app.models.models import Analysis, AnalysisStatus, CrawlData, WebsiteIntelligence, Scores, Issue, GeneratedPrompt, StrengthsWeaknesses, Competitors, GEOIntelligence
 from app.modules.crawler import CrawlerEngine
 from app.modules.crawl_quality_validator import CrawlQualityValidator, ExtractionValidator
 from app.modules.extractor import ContentExtractionEngine
@@ -20,8 +20,15 @@ from app.modules.issue_detector import IssueDetectionEngine
 from app.modules.scorer import ScoreEngine
 from app.modules.prompt_generator import PromptGenerationEngine
 from app.modules.strengths_weaknesses import StrengthsWeaknessesAnalyzer
-from app.modules.competitor_analysis import CompetitorAnalysisEngine
+from app.modules.competitor_intelligence.competitor_discovery import CompetitorDiscoveryEngine
+from app.modules.competitor_intelligence.query_generator import CompetitorQueryGenerator
+from app.modules.competitor_intelligence.search_executor import AISearchExecutor
+from app.modules.competitor_intelligence.validator import CompetitorValidator
+from app.modules.competitor_intelligence.insight_generator import InsightGenerator
 from app.modules.recommender import RecommendationEngine
+from app.modules.geo_intelligence import GEOIntelligenceEngine
+from app.modules.context_engine import ContextEngine
+from app.modules.intent_engine import IntentEngine
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +47,7 @@ async def run_analysis(analysis_id: str, db: AsyncSession):
     except asyncio.TimeoutError:
         logger.error(f"[ORCHESTRATOR] WATCHDOG: analysis {analysis_id} exceeded {WATCHDOG_TIMEOUT}s")
         try:
+            await db.rollback()
             analysis = await db.get(Analysis, analysis_id)
             analysis.status = AnalysisStatus.failed
             analysis.error = f"Analysis timeout: exceeded {WATCHDOG_TIMEOUT} seconds"
@@ -49,6 +57,7 @@ async def run_analysis(analysis_id: str, db: AsyncSession):
     except Exception as e:
         logger.error(f"[ORCHESTRATOR] Unhandled exception: {type(e).__name__}: {e}", exc_info=True)
         try:
+            await db.rollback()
             analysis = await db.get(Analysis, analysis_id)
             analysis.status = AnalysisStatus.failed
             analysis.error = str(e)
@@ -97,10 +106,16 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
             confidence = 0
         quality_result = _FallbackQuality()
 
+    # Strip raw HTML to keep the DB write fast (the extracted_content module
+    # already parsed everything we need; raw HTML is no longer required)
+    pages_for_db = {
+        url: {k: v for k, v in page.items() if k != "html"}
+        for url, page in crawl_result.pages.items()
+    }
     try:
         db.add(CrawlData(
             analysis_id=analysis_id,
-            pages=crawl_result.pages,
+            pages=pages_for_db,
             sitemap_urls=crawl_result.sitemap_urls,
             robots_txt=crawl_result.robots_txt,
             llms_txt=crawl_result.llms_txt,
@@ -172,6 +187,24 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
         t_elapsed = time.time() - t
         logger.error(f"[STEP 3] FAILED after {t_elapsed:.1f}s: {type(e).__name__}: {e}")
         profile = _default_profile()
+
+    # STEP 3.1: Context Engine
+    logger.info("[STEP 3.1] Context Engine START")
+    t = time.time()
+    try:
+        context_engine = ContextEngine()
+        business_context = await context_engine.build_context(extracted_content)
+        profile["business_context"] = business_context
+        
+        intent_engine = IntentEngine()
+        query_intents = intent_engine.determine_intents(business_context)
+        profile["query_intents"] = query_intents
+        t_elapsed = time.time() - t
+        logger.info(f"[STEP 3.1] Context Engine END -- {len(query_intents)} intents in {t_elapsed:.1f}s")
+    except Exception as e:
+        logger.warning(f"[STEP 3.1] Context Engine failed (non-fatal): {e}")
+        profile["business_context"] = {}
+        profile["query_intents"] = ["Informational", "Commercial", "Comparison", "Local", "Decision Making"]
 
     # STEP 3.5: Website type + save intelligence
     logger.info("[STEP 3.5] Website type detection START")
@@ -272,35 +305,49 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
 
     # STEP 7: Competitor Analysis
     logger.info("[STEP 7] Competitor Analysis START")
+    await _set_status(analysis, AnalysisStatus.analyzing_competitors, db)
     t = time.time()
     try:
-        logger.info("[STEP 7] Creating competitor engine...")
-        comp_engine = CompetitorAnalysisEngine()
-        logger.info("[STEP 7] Analyzing competitors...")
-        competitors = comp_engine.analyze_competitors(
-            extracted_content,
-            profile
-        )
+        logger.info("[STEP 7] Creating competitor intelligence engines...")
+        discovery_engine = CompetitorDiscoveryEngine()
+        query_generator = CompetitorQueryGenerator()
+        search_executor = AISearchExecutor()
+        validator = CompetitorValidator()
+        insight_generator = InsightGenerator()
+        
+        # We need business_context from profile
+        biz_context = profile.get("business_context", {})
+        
+        logger.info("[STEP 7] Discovering competitors (LLM)...")
+        discovered_competitors = await discovery_engine.discover(biz_context)
+        
+        logger.info("[STEP 7] Generating AI queries...")
+        queries = await query_generator.generate_queries(biz_context, count=10)
+        
+        logger.info("[STEP 7] Executing AI searches...")
+        search_results = await search_executor.execute_searches(queries, biz_context)
+        
+        logger.info("[STEP 7] Validating competitors...")
+        validated_competitors = validator.validate(discovered_competitors, search_results.get("leaderboard", []))
+        
+        logger.info("[STEP 7] Generating competitive insights...")
+        insights = await insight_generator.generate_insights(biz_context, validated_competitors, search_results)
+        
+        # Just creating the db object format
         competitors_data = {
             "analysis_id": analysis_id,
-            "competitors": [
-                {
-                    "domain": c.domain,
-                    "name": c.name,
-                    "similarity_score": c.similarity_score,
-                    "authority_score": c.authority_score,
-                    "ai_visibility_score": c.ai_visibility_score,
-                    "shared_topics": c.shared_topics,
-                    "shared_services": c.shared_services,
-                    "source": c.source,
-                }
-                for c in competitors
-            ],
+            "competitors": validated_competitors,
+            "insight_analysis": insights,
+            "opportunity_analysis": insights.get("opportunity_analysis", {}),
+            "leaderboard": search_results.get("leaderboard", [])
         }
-        db.add(Competitors(**competitors_data))
+        
+        # Create or update Competitors DB row
+        comp_record = Competitors(**competitors_data)
+        db.add(comp_record)
         await db.commit()
         t_elapsed = time.time() - t
-        logger.info(f"[STEP 7] Competitor Analysis END -- {len(competitors)} competitors in {t_elapsed:.1f}s")
+        logger.info(f"[STEP 7] Competitor Analysis END -- {len(validated_competitors)} competitors in {t_elapsed:.1f}s")
     except Exception as e:
         t_elapsed = time.time() - t
         logger.warning(f"[STEP 7] FAILED after {t_elapsed:.1f}s (non-fatal): {e}")
@@ -322,7 +369,8 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
             "competitors": competitors if 'competitors' in locals() else [],
         }
         logger.info("[STEP 8] Generating prompts (timeout: 60s)...")
-        generated = await asyncio.wait_for(prompt_engine.generate(profile_with_content), timeout=60)
+        intents_to_use = profile.get("query_intents")
+        generated = await asyncio.wait_for(prompt_engine.generate(profile_with_content, intents=intents_to_use), timeout=60)
         for p in generated:
             db.add(GeneratedPrompt(
                 analysis_id=analysis_id,
@@ -339,6 +387,58 @@ async def _run_pipeline(analysis: Analysis, analysis_id: str, db: AsyncSession):
     except Exception as e:
         t_elapsed = time.time() - t
         logger.error(f"[STEP 8] FAILED after {t_elapsed:.1f}s: {type(e).__name__}: {e}")
+
+    # STEP 9: GEO Intelligence Layer (consumes all pipeline outputs)
+    logger.info("[STEP 9] GEO Intelligence Layer START")
+    t = time.time()
+    try:
+        # Build crawl signals summary for evidence object
+        crawl_signals = {
+            "total_pages": crawl_result.total_pages,
+            "has_schema": any(p.get("schema_types") for p in extracted_content.values()),
+            "has_faq": any(p.get("faqs") for p in extracted_content.values()),
+            "has_reviews": any(p.get("reviews") for p in extracted_content.values()),
+            "has_llms_txt": bool(crawl_result.llms_txt),
+            "schema_types": list({s for p in extracted_content.values() for s in (p.get("schema_types") or []) if s}),
+        }
+
+        # Fetch prompts with playground results for evidence
+        from sqlalchemy import select as sa_select
+        prompts_result = await db.execute(sa_select(GeneratedPrompt).where(GeneratedPrompt.analysis_id == analysis_id))
+        prompts_list = [{
+            "prompt_text": p.prompt_text,
+            "intent": p.intent,
+            "playground_results": p.playground_results,
+        } for p in prompts_result.scalars().all()]
+
+        competitors_list = []
+        if 'competitors' in locals() and competitors:
+            competitors_list = [
+                {"name": c.name, "domain": c.domain, "similarity_score": c.similarity_score}
+                for c in competitors
+            ]
+
+        geo_engine = GEOIntelligenceEngine()
+        geo_result = await asyncio.wait_for(
+            geo_engine.analyze({
+                "intelligence": profile,
+                "scores": score_data,
+                "issues": detected_issues,
+                "recommendations": recommendations,
+                "prompts": prompts_list,
+                "competitors": competitors_list,
+                "crawl_signals": crawl_signals,
+            }),
+            timeout=90
+        )
+        db.add(GEOIntelligence(analysis_id=analysis_id, **geo_result))
+        await db.commit()
+        t_elapsed = time.time() - t
+        logger.info(f"[STEP 9] GEO Intelligence END in {t_elapsed:.1f}s")
+    except asyncio.TimeoutError:
+        logger.error(f"[STEP 9] TIMEOUT after {time.time() - t:.1f}s (non-fatal)")
+    except Exception as e:
+        logger.warning(f"[STEP 9] FAILED (non-fatal): {type(e).__name__}: {e}")
 
     # DONE
     await _set_status(analysis, AnalysisStatus.completed, db)

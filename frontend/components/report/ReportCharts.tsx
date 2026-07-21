@@ -81,7 +81,7 @@ export default function ReportCharts({
 
         {/* Chart 1: AI Recommendation Rates */}
         {(openaiTotal > 0 || geminiTotal > 0) && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border-2 border-gray-300 flex flex-col print:break-inside-avoid overflow-hidden">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col print:break-inside-avoid overflow-hidden">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-1">ChatGPT vs Gemini</h3>
             <p className="text-xs text-gray-500 mb-6">How often each AI recommends your business. If your bar is red, the AI completely ignored you for those searches. Your goal is to turn these green.</p>
             <div className="h-60 w-full mt-4">
@@ -105,7 +105,7 @@ export default function ReportCharts({
 
         {/* Chart 2: Priority Pie */}
         {priorityData.length > 0 && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border-2 border-gray-300 flex flex-col print:break-inside-avoid overflow-hidden">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col print:break-inside-avoid overflow-hidden">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-1">Action Plan Priority</h3>
             <p className="text-xs text-gray-500 mb-6">This breaks down your recommended fixes. Focus on High Priority items first to see the fastest improvement in AI rankings.</p>
             <div className="h-60 w-full mt-4">
@@ -136,7 +136,7 @@ export default function ReportCharts({
 
         {/* Chart 3: Mentions */}
         {mentionsData.length > 0 && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border-2 border-gray-300 flex flex-col print:break-inside-avoid overflow-hidden">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col print:break-inside-avoid overflow-hidden">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-1">How AI Talks About You</h3>
             <p className="text-xs text-gray-500 mb-6">If the AI mentions your brand but not your products, it knows who you are but doesn't understand what you sell.</p>
             <div className="h-60 w-full mt-4">
@@ -167,7 +167,7 @@ export default function ReportCharts({
 
         {/* Chart 4: Coverage Bar */}
         {coverageData.length > 0 && (
-          <div className="bg-white p-6 rounded-2xl shadow-sm border-2 border-gray-300 flex flex-col print:break-inside-avoid overflow-hidden">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col print:break-inside-avoid overflow-hidden">
             <h3 className="text-sm font-semibold text-gray-700 uppercase tracking-wider mb-1">What AI Extracted From Your Site</h3>
             <p className="text-xs text-gray-500 mb-6">The AI reads your website to build its knowledge. If it failed to extract your Services, it won't recommend you for them.</p>
             <div className="h-60 w-full mt-4">

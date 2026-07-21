@@ -24,6 +24,7 @@ playwright install chromium
 
 uvicorn app.main:app --reload
 ```
+.\venv\Scripts\Activate.ps1
 
 ### 2. Frontend
 
@@ -41,6 +42,7 @@ cp backend/.env.example backend/.env
 
 docker-compose up --build
 ```
+.\venv\Scripts\Activate.ps1
 
 Open http://localhost:3000
 
