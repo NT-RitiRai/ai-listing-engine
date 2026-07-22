@@ -33,6 +33,7 @@ class Analysis(Base):
     prompts: Mapped[list["GeneratedPrompt"]] = relationship("GeneratedPrompt", back_populates="analysis")
     strengths_weaknesses: Mapped["StrengthsWeaknesses | None"] = relationship("StrengthsWeaknesses", back_populates="analysis", uselist=False)
     competitors: Mapped["Competitors | None"] = relationship("Competitors", back_populates="analysis", uselist=False)
+    summary_report: Mapped["AISummaryReport | None"] = relationship("AISummaryReport", back_populates="analysis", uselist=False)
 
 class CrawlData(Base):
     __tablename__ = "crawl_data"
@@ -324,3 +325,17 @@ class TrendData(Base):
     value: Mapped[float] = mapped_column(Float, default=0.0)
     dimension: Mapped[str | None] = mapped_column(String, nullable=True) # weekly, monthly
 
+
+class AISummaryReport(Base):
+    __tablename__ = "ai_summary_reports"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    analysis_id: Mapped[str] = mapped_column(ForeignKey("analyses.id"), unique=True)
+    overview: Mapped[str] = mapped_column(Text)
+    key_insights: Mapped[list] = mapped_column(JSON)
+    competitor_analysis: Mapped[str] = mapped_column(Text)
+    failures_analysis: Mapped[str] = mapped_column(Text)
+    improvement_plan: Mapped[list] = mapped_column(JSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    analysis: Mapped["Analysis"] = relationship("Analysis", back_populates="summary_report")

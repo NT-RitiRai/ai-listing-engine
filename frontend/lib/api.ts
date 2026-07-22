@@ -40,8 +40,17 @@ export const analyzePrompt = (promptId: string) =>
 export const getGeoIntelligence = (id: string) =>
   api.get(`/analyses/${id}/geo-intelligence`).then((r) => r.data);
 
+export const getCrawlData = (id: string) =>
+  api.get(`/analyses/${id}/crawl-data`).then((r) => r.data);
+
 export const getCompetitors = (id: string) =>
   api.get(`/analyses/${id}/competitors`).then((r) => r.data);
 
 export const getCitationReadiness = (id: string) =>
   api.get(`/analyses/${id}/citation-readiness`).then((r) => r.data);
+
+export const generateSummaryReport = (id: string) =>
+  api.post(`/analyses/${id}/summary-report`).then((r) => r.data);
+
+export const getSummaryReport = (id: string) =>
+  api.get(`/analyses/${id}/summary-report`).then((r) => r.data);

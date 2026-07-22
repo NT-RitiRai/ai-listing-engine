@@ -35,7 +35,7 @@ class RecommendationEngine:
             bump_val = base_bump[0] + (hash(issue_type) % (base_bump[1] - base_bump[0] + 1))
             
             recommendations.append({
-                "problem": f"AI models are failing to properly extract or prioritize your {issue_type.replace('_', ' ')}.",
+                "problem": f"Critical Extraction Blocker: {issue_type.replace('_', ' ').title()}",
                 "evidence": f"Detected across {affected_count} commercial pages.",
                 "business_impact": issue.get("impact", "Loss of commercial visibility in AI recommendations."),
                 "technical_cause": issue.get("recommendation", "Missing foundational technical signals."),

@@ -5,6 +5,38 @@
     display: none !important;
   }
 
+  /* Force grid-cols to stay active during PDF export (browsers often treat print as mobile width) */
+  .md\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .md\:grid-cols-3 { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; }
+  .md\:grid-cols-4 { grid-template-columns: repeat(4, minmax(0, 1fr)) !important; }
+  .md\:grid-cols-5 { grid-template-columns: repeat(5, minmax(0, 1fr)) !important; }
+  .md\:grid-cols-6 { grid-template-columns: repeat(6, minmax(0, 1fr)) !important; }
+  
+  .md\:col-span-2 { grid-column: span 2 / span 2 !important; }
+  
+  .md\:flex-row { flex-direction: row !important; }
+  
+  /* Prevent page breaks inside cards, containers, and charts */
+  .break-inside-avoid,
+  section,
+  .rounded-xl,
+  .rounded-2xl,
+  .rounded-3xl,
+  .bg-white,
+  .shadow-sm,
+  .border,
+  img,
+  svg,
+  canvas {
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+  }
+  
+  h1, h2, h3, h4, h5, h6 {
+    break-after: avoid !important;
+    page-break-after: avoid !important;
+  }
+
   .print-only {
     display: block !important;
     position: static !important;
@@ -42,4 +74,13 @@ body {
 ::-webkit-scrollbar-thumb {
   background: #374151;
   border-radius: 3px;
+}
+
+/* Utility to hide scrollbar but keep functionality (used for mobile horizontal nav) */
+.hide-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }

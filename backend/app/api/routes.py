@@ -128,6 +128,37 @@ async def get_intelligence(analysis_id: str, db: AsyncSession = Depends(get_db))
     }
 
 
+@router.get("/analyses/{analysis_id}/crawl-data")
+async def get_crawl_data(analysis_id: str, db: AsyncSession = Depends(get_db)):
+    """Get raw crawl data and extracted content."""
+    crawl_result = await db.execute(select(CrawlData).where(CrawlData.analysis_id == analysis_id))
+    crawl_data = crawl_result.scalar_one_or_none()
+    
+    intel_result = await db.execute(select(WebsiteIntelligence).where(WebsiteIntelligence.analysis_id == analysis_id))
+    intel = intel_result.scalar_one_or_none()
+    
+    if not crawl_data and not intel:
+        raise HTTPException(404, "Crawl data not found")
+        
+    # We strip huge HTML fields to prevent browser crash, keep clean raw data
+    pages_summary = {}
+    if crawl_data and crawl_data.pages:
+        for url, data in crawl_data.pages.items():
+            clean_data = data.copy()
+            if "html" in clean_data:
+                del clean_data["html"]
+            pages_summary[url] = clean_data
+            
+    return {
+        "sitemap_urls": crawl_data.sitemap_urls if crawl_data else [],
+        "robots_txt": crawl_data.robots_txt if crawl_data else None,
+        "llms_txt": crawl_data.llms_txt if crawl_data else None,
+        "total_pages_crawled": crawl_data.total_pages if crawl_data else 0,
+        "pages_data": pages_summary,
+        "extracted_content": intel.extracted_content if intel else {}
+    }
+
+
 @router.get("/analyses/{analysis_id}/strengths-weaknesses")
 async def get_strengths_weaknesses(analysis_id: str, db: AsyncSession = Depends(get_db)):
     """Get strengths and weaknesses analysis."""
@@ -357,3 +388,38 @@ async def get_visibility_metrics(db: AsyncSession = Depends(get_db)):
     metrics = result.scalars().all()
     return metrics
 
+
+from app.models.models import AISummaryReport
+from app.modules.summary_generator import SummaryGeneratorEngine
+
+@router.get("/analyses/{analysis_id}/summary-report")
+async def get_summary_report(analysis_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(AISummaryReport).where(AISummaryReport.analysis_id == analysis_id))
+    report = result.scalar_one_or_none()
+    if not report:
+        raise HTTPException(404, "Summary report not generated yet")
+    return {
+        "overview": report.overview,
+        "key_insights": report.key_insights,
+        "competitor_analysis": report.competitor_analysis,
+        "failures_analysis": report.failures_analysis,
+        "improvement_plan": report.improvement_plan,
+        "created_at": report.created_at
+    }
+
+@router.post("/analyses/{analysis_id}/summary-report")
+async def generate_summary_report_endpoint(analysis_id: str, db: AsyncSession = Depends(get_db)):
+    engine = SummaryGeneratorEngine()
+    try:
+        report = await engine.generate_summary_report(analysis_id, db)
+        return {
+            "overview": report.overview,
+            "key_insights": report.key_insights,
+            "competitor_analysis": report.competitor_analysis,
+            "failures_analysis": report.failures_analysis,
+            "improvement_plan": report.improvement_plan,
+            "created_at": report.created_at
+        }
+    except Exception as e:
+        logger.error(f"Failed to generate summary report: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
